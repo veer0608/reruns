@@ -126,31 +126,38 @@ produced them, because it changes what the number means.
 
 ## Current status
 
-**No score yet.** The first full run against `gemini-flash-lite-latest`
-reached 60 of 75 trials before the day's token allowance ran out, so 12 of the
-15 tasks have all five trials and three have none. By this project's own rule
-that is not a score and none is printed here. The remaining trials resume from
-the checkpoint.
+**No score yet.** The first run reached 60 of 75 trials before the day's token
+allowance ran out, and it was then abandoned rather than finished. It was
+measured under two grading decisions that have since changed, so its headline
+would have arrived carrying more caveats than signal. The measurement in
+progress is a fresh 75 trials on the current harness.
 
-What the partial run did produce is three bugs in the harness, all of which
-would have made the eventual number wrong:
+That abandoned run was not wasted. It produced five defects, every one of which
+would have made a published number wrong:
 
 - **Rule 9 was scoring the harness, not the model.** Whether the customer had
   asked to be refunded to their card was matched with a regex over generated
   prose. The simulator said "I don't want store credit. I want it back on the
-  card I paid with", which matched none of the patterns, and three trials in
-  which the agent did exactly the right thing were recorded as policy
-  violations. What the customer wants is a property of the scenario, so it is
-  now declared in the task and read from there.
-- **A trial killed by the token cap was cached as a failure**, so the resume
-  would have counted a trial that never ran as one the agent got wrong. That
-  is the abandonment rule defeated from inside the checkpoint.
-- **`--out` pointed at the `--checkpoint` path overwrote it**, which is how the
-  first 60 trials nearly had to be bought twice.
+  card I paid with", which matched none of the patterns, and three trials where
+  the agent did exactly the right thing were logged as policy violations. What
+  the customer wants is a property of the scenario, so it is now declared in
+  the task and read from there.
+- **Requiring `escalate_to_human` was the wrong bar.** Six of eleven failures
+  were agents that refused correctly, explained the rule accurately, offered a
+  sensible alternative, and never reached for the tool. Refusal tasks now
+  require the lookup instead.
+- **The customer could hang up mid-action.** The simulator stops on what the
+  agent says, so an agent announcing "I am going to refund 45.99" lost the turn
+  it would have acted on. Two trials ended one call short of a pass. The agent
+  now gets a closing turn.
+- **A trial killed by the token cap was cached as a failure**, so a resume
+  would have counted a trial that never ran as one the agent got wrong.
+- **`--out` pointed at the `--checkpoint` path overwrote it**, which is how 60
+  finished trials nearly had to be bought twice.
 
-All three are fixed and held by tests. The 60 finished trials were recovered
-and re-scored offline with `--regrade`, which moved exactly the three trials
-rule 9 had wrongly failed and nothing else.
+All five are fixed and held by tests. Four of them were only visible because
+every trial keeps its transcript, and three were re-scored offline with
+`--regrade` for nothing.
 
 The scaffolding that produces a number is complete, tested, and honest about
 running out:

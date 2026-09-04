@@ -142,10 +142,20 @@ bounds it.
 - Trials measured before the fix were produced by a different harness. Mixing
   them with trials measured after it measures two systems and reports one
   number.
-- `--no-final-turn` reproduces the old behaviour. It exists for exactly one
-  purpose: finishing the v1 run whose 58 banked trials predate the fix. The
-  resume MUST pass it.
+- `--no-final-turn` reproduces the old behaviour. Nothing needs it right now:
+  it is kept so the cost of the truncation can be measured directly if that
+  ever becomes an interesting number on its own.
 - Every run file records `final_turn` in its metadata, so which harness
   produced a number is a fact on disk rather than a memory.
-- v2 is a fresh 75 trials with the default. Do not seed it from v1's
-  checkpoint.
+
+## v1 was abandoned on purpose
+
+The first run reached 60 of 75 trials and was never published as a score. It
+was measured before escalation became optional and before the closing turn
+existed, so its headline would have carried two asterisks large enough to make
+the number harder to read than no number. Finishing it would have cost another
+188,000 tokens to publish something already superseded.
+
+Its files stay in `runs/` as a record and its findings stay in this file. The
+measurement is **v2**: a fresh 75 trials on the current harness, seeded from
+nothing. Do not resume v2 from `runs/first-checkpoint.json`.
