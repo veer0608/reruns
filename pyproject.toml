@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reruns"
+version = "0.1.0"
+description = "A multi-turn agent benchmark that runs every task five times."
+readme = "README.md"
+requires-python = ">=3.11"
+# Nothing. The environment is sqlite3 from the standard library, the user
+# simulator and the agent share one urllib client, and the grader is a dict
+# diff -- so this installs and runs on a bare Python.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+reruns = "reruns.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["reruns*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

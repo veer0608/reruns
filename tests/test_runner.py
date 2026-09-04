@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+import json
+
+from evals.checkpoint import Checkpoint
+from evals.runner import Summary, main, report, run_solver, run_trial
+from reruns.grade import Verdict
+
+
+def verdict(task_id, trial, passed):
+    return Verdict(task_id=task_id, trial=trial, state_ok=passed, calls_ok=passed)
+
+
+def summary(verdicts, k=5, tasks=2, complete=True):
+    return Summary(solver="model", model="fake", k=k, tasks=tasks,
+                   verdicts=verdicts, complete=complete)
+
+
+def test_pass_hat_k_is_not_pass_at_1():
+    """The number the project exists for. Ten trials, six passes, but only one
+    of the two tasks passed all five -- 0.6 against 0.5, and the gap widens
+    fast as tasks get flakier."""
+    verdicts = [verdict("a", i, True) for i in range(1, 6)]
+    verdicts += [verdict("b", i, i == 1) for i in range(1, 6)]
+    got = summary(verdicts)
+    assert got.pass_at_1 == 0.6
+    assert got.pass_hat_k == 0.5
+
+
+def test_one_failure_in_five_costs_the_whole_task():
+    verdicts = [verdict("a", i, i != 3) for i in range(1, 6)]
+    got = summary(verdicts, tasks=1)
+    assert got.pass_at_1 == 0.8
+    assert got.pass_hat_k == 0.0
+
+
+def test_a_task_with_fewer_than_k_trials_is_not_counted():
+    """A half-measured task is not a task. Counting it would let an early stop
+    inflate pass^k by dropping the trials that would have failed."""
+    verdicts = [verdict("a", i, True) for i in range(1, 6)]
+    verdicts += [verdict("b", 1, True)]
+    got = summary(verdicts)
+    assert got.pass_hat_k == 1.0
+    assert round(got.pass_at_1, 4) == round(6 / 6, 4)
+
+
+def test_violations_are_counted_by_rule():
+    from reruns.policy import Violation
+
+    bad = verdict("a", 1, False)
+    bad.violations = [Violation(7, "amount_stated_first", "x"),
+                      Violation(7, "amount_stated_first", "y")]
+    got = summary([bad, verdict("a", 2, True)], k=2, tasks=1)
+    assert got.violation_rate == 0.5
+    assert got.by_rule["7 amount_stated_first"] == 2
+
+
+def test_the_oracle_scores_one_and_the_mute_solver_zero(domain):
+    empty = Checkpoint.load(None)
+    for solver, wanted in (("oracle", 1.0), ("mute", 0.0)):
+        got = run_solver(domain, solver, k=1, tasks=domain.tasks, client=None,
+                         scripted=True, checkpoint=empty, max_turns=12, quiet=True)
+        assert got.pass_at_1 == wanted, solver
+
+
+def test_every_task_is_failed_by_the_mute_solver_for_a_stated_reason(domain):
+    """A task the mute solver fails for no recorded reason is a task whose
+    expectations are empty -- it would pass anything."""
+    empty = Checkpoint.load(None)
+    got = run_solver(domain, "mute", k=1, tasks=domain.tasks, client=None,
+                     scripted=True, checkpoint=empty, max_turns=12, quiet=True)
+    for one in got.verdicts:
+        assert one.reasons, one.task_id
+
+
+def test_a_partial_run_prints_no_percentage():
+    text = report(summary([verdict("a", 1, True)], complete=False))
+    assert "PARTIAL" in text
+    assert "%" not in text
+    assert "pass@1" not in text
+
+
+def test_the_daily_cap_stops_the_run_where_it_stands(domain, monkeypatch):
+    import evals.runner as runner
+
+    seen = []
+
+    def capped(domain_, task, trial, solver, **kwargs):
+        seen.append((task.id, trial))
+        one = verdict(task.id, trial, True)
+        if len(seen) == 3:
+            one.error = "quota: 429 tokens per day"
+        return one
+
+    monkeypatch.setattr(runner, "run_trial", capped)
+    got = run_solver(domain, "model", k=2, tasks=domain.tasks[:4], client=None,
+                     scripted=True, checkpoint=Checkpoint.load(None),
+                     max_turns=12, quiet=True)
+    assert not got.complete
+    assert len(seen) == 3
+
+
+def test_a_checkpoint_is_resumed_rather_than_re_paid_for(domain, tmp_path, monkeypatch):
+    import evals.runner as runner
+
+    path = tmp_path / "run.json"
+    calls = []
+
+    def counted(domain_, task, trial, solver, **kwargs):
+        calls.append((task.id, trial))
+        return verdict(task.id, trial, True)
+
+    monkeypatch.setattr(runner, "run_trial", counted)
+    tasks = domain.tasks[:3]
+    first = run_solver(domain, "model", k=2, tasks=tasks, client=None, scripted=True,
+                       checkpoint=Checkpoint.load(path), max_turns=12, quiet=True)
+    assert len(calls) == 6 and first.pass_at_1 == 1.0
+
+    calls.clear()
+    resumed = run_solver(domain, "model", k=2, tasks=tasks, client=None, scripted=True,
+                         checkpoint=Checkpoint.load(path), max_turns=12, quiet=True)
+    assert calls == []
+    assert len(resumed.verdicts) == 6
+
+
+def test_a_checkpoint_written_mid_run_is_readable(domain, tmp_path):
+    path = tmp_path / "run.json"
+    checkpoint = Checkpoint.load(path)
+    checkpoint.add(verdict("a", 1, True))
+    checkpoint.add(verdict("a", 2, False))
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert len(raw["verdicts"]) == 2
+    assert Checkpoint.load(path).has("a", 2)
+    assert not list(path.parent.glob("*.tmp"))
+
+
+def test_each_trial_gets_a_world_of_its_own(domain):
+    """Run the same mutating task twice and the second must not inherit the
+    first's refund -- the refund id would move from rf_2 to rf_3 and the task
+    would fail for a reason that has nothing to do with the agent."""
+    task = domain.task("refund_kettle")
+    first = run_trial(domain, task, 1, "oracle")
+    second = run_trial(domain, task, 2, "oracle")
+    assert first.passed and second.passed
+
+
+def test_check_passes_on_the_shipped_domain(capsys):
+    assert main(["--check"]) == 0
+    out = capsys.readouterr().out
+    assert "oracle   pass@1 1.000" in out
+    assert "mute     pass@1 0.000" in out
+
+
+def test_the_runner_says_so_when_there_is_no_key(monkeypatch, capsys):
+    import evals.runner as runner
+
+    monkeypatch.setattr(runner, "build_client", lambda *a, **k: None)
+    assert main(["--solvers", "model", "--k", "1"]) == 2
+    assert "no API key" in capsys.readouterr().out
+
+
+def test_a_run_file_is_written_when_asked(tmp_path, capsys):
+    out = tmp_path / "oracle.json"
+    assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["summaries"][0]["pass_at_1"] == 1.0
+    assert len(written["summaries"][0]["verdicts"]) == 15

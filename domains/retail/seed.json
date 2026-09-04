@@ -1,0 +1,51 @@
+{
+  "now": "2026-03-01T12:00:00Z",
+
+  "customers": [
+    {"customer_id": "c_1", "name": "Nina Kapoor",  "email": "nina.kapoor@example.com",  "tier": "gold",     "credit_balance_cents": 2400},
+    {"customer_id": "c_2", "name": "Omar Haddad",  "email": "omar.haddad@example.com",  "tier": "standard", "credit_balance_cents": 500},
+    {"customer_id": "c_3", "name": "Priya Raman",  "email": "priya.raman@example.com",  "tier": "standard", "credit_balance_cents": 0},
+    {"customer_id": "c_4", "name": "Wei Chen",     "email": "wei.chen@example.com",     "tier": "gold",     "credit_balance_cents": 1200}
+  ],
+
+  "products": [
+    {"product_id": "p_kettle", "name": "Copper Kettle", "price_cents": 4599},
+    {"product_id": "p_lamp",   "name": "Desk Lamp",     "price_cents": 8900},
+    {"product_id": "p_mat",    "name": "Yoga Mat",      "price_cents": 2400},
+    {"product_id": "p_mug",    "name": "Travel Mug",    "price_cents": 1850},
+    {"product_id": "p_chair",  "name": "Ergo Chair",    "price_cents": 24900},
+    {"product_id": "p_cable",  "name": "USB-C Cable",   "price_cents": 990}
+  ],
+
+  "orders": [
+    {"order_id": "o_1041", "customer_id": "c_1", "status": "delivered", "placed_at": "2026-02-20T10:00:00Z", "address": "12 Alder Way, Bengaluru 560001",  "total_cents": 4599},
+    {"order_id": "o_1042", "customer_id": "c_1", "status": "pending",   "placed_at": "2026-02-28T09:30:00Z", "address": "12 Alder Way, Bengaluru 560001",  "total_cents": 8900},
+    {"order_id": "o_1043", "customer_id": "c_2", "status": "delivered", "placed_at": "2025-12-01T08:00:00Z", "address": "4 Harbour Rd, Chennai 600001",    "total_cents": 2400},
+    {"order_id": "o_1044", "customer_id": "c_2", "status": "shipped",   "placed_at": "2026-02-25T16:45:00Z", "address": "4 Harbour Rd, Chennai 600001",    "total_cents": 1850},
+    {"order_id": "o_1045", "customer_id": "c_3", "status": "delivered", "placed_at": "2026-02-10T11:15:00Z", "address": "88 Linden St, Pune 411001",       "total_cents": 25890},
+    {"order_id": "o_1046", "customer_id": "c_3", "status": "pending",   "placed_at": "2026-02-27T19:00:00Z", "address": "88 Linden St, Pune 411001",       "total_cents": 990},
+    {"order_id": "o_1047", "customer_id": "c_4", "status": "delivered", "placed_at": "2026-02-24T13:20:00Z", "address": "7 Ridge Ln, Hyderabad 500001",    "total_cents": 6449},
+    {"order_id": "o_1048", "customer_id": "c_4", "status": "cancelled", "placed_at": "2026-02-01T10:10:00Z", "address": "7 Ridge Ln, Hyderabad 500001",    "total_cents": 8900},
+    {"order_id": "o_1049", "customer_id": "c_1", "status": "delivered", "placed_at": "2026-02-26T15:00:00Z", "address": "12 Alder Way, Bengaluru 560001",  "total_cents": 2400},
+    {"order_id": "o_1050", "customer_id": "c_2", "status": "pending",   "placed_at": "2026-02-28T20:05:00Z", "address": "4 Harbour Rd, Chennai 600001",    "total_cents": 24900}
+  ],
+
+  "order_items": [
+    {"item_id": "i_1",  "order_id": "o_1041", "product_id": "p_kettle", "qty": 1, "price_cents": 4599,  "status": "delivered"},
+    {"item_id": "i_2",  "order_id": "o_1042", "product_id": "p_lamp",   "qty": 1, "price_cents": 8900,  "status": "pending"},
+    {"item_id": "i_3",  "order_id": "o_1043", "product_id": "p_mat",    "qty": 1, "price_cents": 2400,  "status": "delivered"},
+    {"item_id": "i_4",  "order_id": "o_1044", "product_id": "p_mug",    "qty": 1, "price_cents": 1850,  "status": "shipped"},
+    {"item_id": "i_5",  "order_id": "o_1045", "product_id": "p_chair",  "qty": 1, "price_cents": 24900, "status": "delivered"},
+    {"item_id": "i_6",  "order_id": "o_1045", "product_id": "p_cable",  "qty": 1, "price_cents": 990,   "status": "delivered"},
+    {"item_id": "i_7",  "order_id": "o_1046", "product_id": "p_cable",  "qty": 1, "price_cents": 990,   "status": "pending"},
+    {"item_id": "i_8",  "order_id": "o_1047", "product_id": "p_mug",    "qty": 1, "price_cents": 1850,  "status": "delivered"},
+    {"item_id": "i_9",  "order_id": "o_1047", "product_id": "p_kettle", "qty": 1, "price_cents": 4599,  "status": "delivered"},
+    {"item_id": "i_10", "order_id": "o_1048", "product_id": "p_lamp",   "qty": 1, "price_cents": 8900,  "status": "cancelled"},
+    {"item_id": "i_11", "order_id": "o_1049", "product_id": "p_mat",    "qty": 1, "price_cents": 2400,  "status": "refunded"},
+    {"item_id": "i_12", "order_id": "o_1050", "product_id": "p_chair",  "qty": 1, "price_cents": 24900, "status": "pending"}
+  ],
+
+  "refunds": [
+    {"refund_id": "rf_1", "order_id": "o_1049", "item_id": "i_11", "amount_cents": 2400, "method": "store_credit", "created_at": "2026-02-27T09:00:00Z"}
+  ]
+}

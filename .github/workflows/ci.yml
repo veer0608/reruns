@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - name: tests
+        run: python -m pytest -q
+      # The two fixtures. If the oracle stops scoring 1.0 or the mute solver
+      # stops scoring 0.0, the scorer is broken and no model number produced by
+      # it is worth reading. Neither needs an API key.
+      - name: harness self-check
+        run: python -m evals.runner --check
