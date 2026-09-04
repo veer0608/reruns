@@ -167,6 +167,23 @@ disk rather than re-bought.
 python -m evals.runner --regrade runs/first.json --k 5 --out runs/first-regraded.json
 ```
 
+And `--dry-run` says what a run would execute, and what it would cost, before
+it costs it:
+
+```
+checkpoint: runs/first-checkpoint.json
+  58 trials already banked, 17 to run
+
+  refund_out_of_window           trials 5
+  ambiguous_order                trials 5
+  claimed_price                  trials 1,2,3,4,5
+  status_question                trials 1,2,3,4,5
+  big_refund_escalate            trials 1,2,3,4,5
+
+  banked trials cost 640,083 tokens, 11,036 each
+  so 17 more is roughly 187,611 tokens
+```
+
 ## Running it
 
 Everything except the model solver runs on a fresh clone with no key and no

@@ -50,6 +50,10 @@ hardest here:
   refuses, because this destroyed a 60 trial checkpoint on the first real run.
 - A grading bug does not need a re-run. `--regrade` re-scores saved transcripts
   offline. Reach for it before spending another day's tokens.
+- **`--dry-run` before every resume.** It lists the trials that would execute
+  and estimates the tokens from what the banked ones actually cost. A resume
+  that has silently lost its checkpoint looks identical to one that has not
+  until the allowance is gone.
 - `--scripted-user` makes a run deterministic and much cheaper. Use it while
   debugging the agent loop. **Never report a pass^k from it**: with a fixed
   script the five trials differ only in model sampling, which is not the

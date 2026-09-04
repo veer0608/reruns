@@ -261,3 +261,26 @@ def test_load_verdicts_reads_a_run_file_as_well_as_a_checkpoint(tmp_path):
     out = tmp_path / "run.json"
     assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
     assert len(runner_load(out)) == 15
+
+
+def test_dry_run_spends_nothing_and_says_what_a_run_would(domain, tmp_path, capsys):
+    """Checking that a resume picks up where the last one stopped should not
+    cost a day's allowance to find out."""
+    path = tmp_path / "run.json"
+    checkpoint = Checkpoint.load(path)
+    banked = verdict("refund_kettle", 1, True)
+    banked.prompt_tokens = 10_000
+    checkpoint.add(banked)
+
+    assert main(["--dry-run", "--k", "2", "--checkpoint", str(path),
+                 "--tasks", "refund_kettle,status_question"]) == 0
+    out = capsys.readouterr().out
+    assert "1 trials already banked, 3 to run" in out
+    assert "refund_kettle" in out and "trials 2" in out
+    assert "status_question" in out and "trials 1,2" in out
+
+
+def test_dry_run_with_no_checkpoint_runs_everything(domain, capsys):
+    assert main(["--dry-run", "--k", "5"]) == 0
+    out = capsys.readouterr().out
+    assert "0 trials already banked, 75 to run" in out

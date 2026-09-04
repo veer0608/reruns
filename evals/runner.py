@@ -306,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-turns", type=int, default=agent.MAX_TURNS)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--out", default=None, help="write the run JSON here")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="list the trials a run would execute, and stop")
     parser.add_argument("--regrade", default=None, metavar="PATH",
                         help="re-score saved trials from their transcripts, no model calls")
     parser.add_argument("--check", action="store_true",
@@ -338,6 +340,10 @@ def main(argv: list[str] | None = None) -> int:
 
     solvers = [name.strip() for name in args.solvers.split(",") if name.strip()]
     tasks = domain.select(args.tasks)
+
+    if args.dry_run:
+        return _dry_run(domain, tasks, args)
+
     client = None
     if "model" in solvers:
         client = build_client(args.provider, args.model)
@@ -390,6 +396,41 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"wrote {target}")
     return exit_code
+
+
+def _dry_run(domain: Domain, tasks, args) -> int:
+    """What a run would cost, before it costs it.
+
+    A resume is only worth starting if it picks up where the last one stopped.
+    Finding out that it did not, by watching a day's allowance go on trials
+    that were already paid for, is an expensive way to learn it.
+    """
+    checkpoint = Checkpoint.load(args.checkpoint)
+    todo, cached = [], []
+    for task in tasks:
+        for trial in range(1, args.k + 1):
+            (cached if checkpoint.has(task.id, trial) else todo).append((task.id, trial))
+
+    print(f"checkpoint: {args.checkpoint or 'none'}")
+    print(f"  {len(cached)} trials already banked, {len(todo)} to run")
+    print()
+    by_task: dict[str, list[int]] = {}
+    for task_id, trial in todo:
+        by_task.setdefault(task_id, []).append(trial)
+    for task_id, trials in by_task.items():
+        runs = ",".join(str(t) for t in trials)
+        print(f"  {task_id:<30} trials {runs}")
+    if not todo:
+        print("  nothing to run; every trial is in the checkpoint")
+
+    if cached:
+        spent = [checkpoint.get(t, n) for t, n in cached]
+        tokens = sum(v.prompt_tokens + v.completion_tokens for v in spent if v)
+        per = tokens / len(spent) if spent else 0
+        print()
+        print(f"  banked trials cost {tokens:,} tokens, {per:,.0f} each")
+        print(f"  so {len(todo)} more is roughly {per * len(todo):,.0f} tokens")
+    return 0
 
 
 def _regrade(domain: Domain, args) -> int:
