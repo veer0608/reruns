@@ -27,6 +27,11 @@ class Task:
     must_call: tuple[str, ...]
     forbid_call: tuple[str, ...]
     expect: dict = field(default_factory=dict)
+    #: Whether this customer asks to be refunded to their original payment
+    #: method. Declared here rather than inferred from what the simulated
+    #: customer says, because a regex over generated prose got it wrong three
+    #: times in sixty trials and each miss was scored against the agent.
+    asks_for_card: bool = False
 
     @property
     def read_only(self) -> bool:
@@ -44,6 +49,7 @@ class Task:
             must_call=tuple(raw.get("must_call", ())),
             forbid_call=tuple(raw.get("forbid_call", ())),
             expect=raw.get("expect", {}) or {},
+            asks_for_card=bool(raw.get("asks_for_card", False)),
         )
 
 
@@ -110,6 +116,12 @@ def validate(domain: Domain) -> list[str]:
             call = step.get("call")
             if call and call.get("name") not in TOOL_NAMES:
                 problems.append(f"{task.id}: solution calls unknown tool {call.get('name')!r}")
+        methods = {row.get("method") for row in task.expect.get("refunds", {}).values()}
+        if ("original_payment" in methods) != task.asks_for_card:
+            problems.append(
+                f"{task.id}: expects {methods or 'no refund'} but asks_for_card="
+                f"{task.asks_for_card}; rule 9 would contradict the expected state"
+            )
         for table, rows in task.expect.items():
             if table not in snapshot:
                 problems.append(f"{task.id}: expects unknown table {table!r}")

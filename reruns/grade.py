@@ -143,7 +143,7 @@ def grade(
         trial=trial,
         state_ok=not state_problems,
         calls_ok=not call_problems,
-        violations=check_policy(trace, before, now),
+        violations=check_policy(trace, before, now, asked_for_card=task.asks_for_card),
         reasons=state_problems + call_problems,
         turns=len([e for e in trace.events if e.get("kind") == "assistant"]),
         error=error,

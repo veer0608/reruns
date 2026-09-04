@@ -44,6 +44,12 @@ hardest here:
   Prefer Gemini for anything long-running.
 - Always pass `--checkpoint runs/NAME.json`. Without it, a cap on trial 4 of
   task 12 throws away everything already paid for.
+- **`--out` and `--checkpoint` must be different files.** They are different
+  formats and the run file is written last, so pointing both at one path
+  overwrites the checkpoint at the moment you most need it. The runner now
+  refuses, because this destroyed a 60 trial checkpoint on the first real run.
+- A grading bug does not need a re-run. `--regrade` re-scores saved transcripts
+  offline. Reach for it before spending another day's tokens.
 - `--scripted-user` makes a run deterministic and much cheaper. Use it while
   debugging the agent loop. **Never report a pass^k from it**: with a fixed
   script the five trials differ only in model sampling, which is not the

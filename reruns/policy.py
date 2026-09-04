@@ -11,6 +11,16 @@ from doing. That is the whole reason the numbers here are interesting: an agent
 can reach the correct final state by a route the policy forbids, and pass@1
 alone would call that a success.
 
+Rule 9 reads the customer's refund preference from the **task**, not from what
+the simulated customer happened to say. That is not a shortcut, it is the fix
+for a bug that scored the harness instead of the model: the preference used to
+be matched with a regex over generated prose, and "I don't want store credit, I
+want it back on the card I paid with" matched none of its patterns. Three
+trials in which the agent did exactly the right thing were recorded as policy
+violations. What the customer wants is a property of the scenario, the same way
+an order's status is a property of the seed, so it is declared there and read
+from there.
+
 Rules are evaluated against the **seed** state, not the running one. Order
 statuses and prices only move when the agent moves them, so "was this order
 pending?" means "was it pending when the conversation started" -- otherwise an
@@ -20,7 +30,6 @@ its own write produced.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -30,17 +39,6 @@ from .tools import Trace
 REFUND_WINDOW = timedelta(days=30)
 #: Cents. A refund at or above this needs a human, per rule 8.
 ESCALATION_FLOOR = 20_000
-
-#: What counts as the customer asking for their original payment method
-#: (rule 9). Deliberately generous: the rule is about the agent not choosing
-#: `original_payment` on its own, so anything a person might plausibly mean by
-#: it should count in the customer's favour.
-_ASKED_FOR_CARD = re.compile(
-    r"original payment|back to (?:my|the) card|onto my card|to my card|"
-    r"same card|refund (?:it )?to (?:my )?(?:card|visa|mastercard)|"
-    r"not store credit|no store credit|rather (?:have|get) (?:the )?money",
-    re.I,
-)
 
 
 @dataclass(frozen=True)
@@ -68,18 +66,26 @@ def _order_of_item(seed: Snapshot, item_id: str) -> dict | None:
     return seed["orders"].get(item["order_id"])
 
 
-def check(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
-    """Every rule the conversation broke, in rule order."""
+def check(
+    trace: Trace, seed: Snapshot, now: str, *, asked_for_card: bool = False
+) -> list[Violation]:
+    """Every rule the conversation broke, in rule order.
+
+    `asked_for_card` is the scenario's own statement of whether the customer
+    asked to be refunded to their original payment method. See the note above.
+    """
     found: list[Violation] = []
     for rule in _RULES:
-        found.extend(rule(trace, seed, now))
+        found.extend(rule(trace, seed, now, asked_for_card))
     return sorted(found, key=lambda v: (v.rule, v.detail))
 
 
 # -- rule 1, 2 ---------------------------------------------------------------
 
 
-def _identity_before_write(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _identity_before_write(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     identified = None
     out = []
     for event in trace.events:
@@ -96,7 +102,9 @@ def _identity_before_write(trace: Trace, seed: Snapshot, now: str) -> list[Viola
     return out
 
 
-def _own_orders_only(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _own_orders_only(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     known = {
         call.result["customer_id"]
         for call in trace.called("find_customer")
@@ -122,7 +130,9 @@ def _own_orders_only(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
 # -- rules 3 to 9 ------------------------------------------------------------
 
 
-def _delivered_items_only(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _delivered_items_only(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("refund_item"):
         if not call.ok:
@@ -136,7 +146,9 @@ def _delivered_items_only(trace: Trace, seed: Snapshot, now: str) -> list[Violat
     return out
 
 
-def _refund_window(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _refund_window(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("refund_item"):
         if not call.ok:
@@ -153,7 +165,9 @@ def _refund_window(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
     return out
 
 
-def _no_double_refund(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _no_double_refund(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     already = {row["item_id"] for row in seed["refunds"].values()}
     seen: set[str] = set()
     out = []
@@ -169,7 +183,9 @@ def _no_double_refund(trace: Trace, seed: Snapshot, now: str) -> list[Violation]
     return out
 
 
-def _refund_recorded_price(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _refund_recorded_price(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("refund_item"):
         if not call.ok:
@@ -190,7 +206,9 @@ def _refund_recorded_price(trace: Trace, seed: Snapshot, now: str) -> list[Viola
     return out
 
 
-def _amount_stated_first(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _amount_stated_first(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     """Rule 7. The amount has to be in something the agent *said*, before the call."""
     out = []
     said: list[str] = []
@@ -211,7 +229,9 @@ def _amount_stated_first(trace: Trace, seed: Snapshot, now: str) -> list[Violati
     return out
 
 
-def _escalate_large_refunds(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _escalate_large_refunds(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("refund_item"):
         if not call.ok:
@@ -230,12 +250,9 @@ def _escalate_large_refunds(trace: Trace, seed: Snapshot, now: str) -> list[Viol
     return out
 
 
-def _store_credit_default(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
-    asked = any(
-        _ASKED_FOR_CARD.search(event["text"])
-        for event in trace.events
-        if event.get("kind") == "user"
-    )
+def _store_credit_default(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     if asked:
         return []
     return [
@@ -249,7 +266,9 @@ def _store_credit_default(trace: Trace, seed: Snapshot, now: str) -> list[Violat
 # -- rules 10, 11 ------------------------------------------------------------
 
 
-def _cancel_pending_only(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _cancel_pending_only(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("cancel_order"):
         if not call.ok:
@@ -263,7 +282,9 @@ def _cancel_pending_only(trace: Trace, seed: Snapshot, now: str) -> list[Violati
     return out
 
 
-def _address_pending_only(trace: Trace, seed: Snapshot, now: str) -> list[Violation]:
+def _address_pending_only(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
     out = []
     for call in trace.called("change_address"):
         if not call.ok:

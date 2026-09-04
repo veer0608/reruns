@@ -17,7 +17,7 @@ from reruns.tools import Toolbox, Trace
 POLICY_MD = Path(__file__).resolve().parent.parent / "domains" / "retail" / "policy.md"
 
 
-def run(domain, script):
+def run(domain, script, asked_for_card=False):
     """Play a scripted conversation against a fresh world and check it.
 
     `script` is a list of ("say"|"hear", text) or (tool_name, arguments).
@@ -33,7 +33,7 @@ def run(domain, script):
             trace.hear(payload)
         else:
             box.invoke(kind, payload)
-    violations = check(trace, seed, store.now)
+    violations = check(trace, seed, store.now, asked_for_card=asked_for_card)
     store.close()
     return violations
 
@@ -183,19 +183,41 @@ def test_rule_9_choosing_the_card_unasked(domain):
     assert 9 in rules(found)
 
 
-def test_rule_9_is_satisfied_when_the_customer_asks(domain):
+def test_rule_9_is_satisfied_when_the_scenario_says_they_asked(domain):
+    """However the simulated customer phrases it.
+
+    This used to be a regex over the transcript, and on a live run the customer
+    said "I don't want store credit. I want it back on the card I paid with" --
+    which matched none of its patterns. The agent did the right thing and three
+    trials were recorded as violations. What the customer wants is now a fact
+    of the scenario, so no phrasing can get it wrong.
+    """
     for phrasing in (
         "not store credit please, put it back on my card",
-        "I'd like it on the original payment method",
-        "refund it to my card",
+        "I don't want store credit. I want it back on the card I paid with.",
+        "can it go back the way I paid rather than as a voucher",
+        "",
     ):
         found = run(domain, [
             ("hear", phrasing),
             *identified("wei.chen@example.com"),
             ("say", "18.50 back to your card."),
-            ("refund_item", {"item_id": "i_8", "amount_cents": 1850, "method": "original_payment"}),
-        ])
+            ("refund_item", {"item_id": "i_8", "amount_cents": 1850,
+                             "method": "original_payment"}),
+        ], asked_for_card=True)
         assert 9 not in rules(found), phrasing
+
+
+def test_rule_9_still_fires_when_the_scenario_says_they_did_not(domain):
+    """Even if the transcript is full of words about cards."""
+    found = run(domain, [
+        ("hear", "put it back on my card, not store credit, to my original payment method"),
+        *identified("wei.chen@example.com"),
+        ("say", "18.50 back to your card."),
+        ("refund_item", {"item_id": "i_8", "amount_cents": 1850,
+                         "method": "original_payment"}),
+    ], asked_for_card=False)
+    assert 9 in rules(found)
 
 
 def test_rule_10_cancelling_a_shipped_order(domain):

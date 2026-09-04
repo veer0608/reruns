@@ -34,6 +34,12 @@ class Checkpoint:
         verdicts = {}
         for entry in raw.get("verdicts", []):
             verdict = Verdict.from_dict(entry)
+            # A trial that died on a quota or a dropped connection is not a
+            # reading, and a resume that reuses it records a failure that never
+            # happened. Skipping it here means the resume re-runs it, which is
+            # the only honest thing to do with a trial nobody ever observed.
+            if verdict.error:
+                continue
             verdicts[(verdict.task_id, verdict.trial)] = verdict
         return cls(path=target, verdicts=verdicts, meta=raw.get("meta", {}))
 

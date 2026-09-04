@@ -145,6 +145,55 @@ def run_trial(
     return verdict
 
 
+def load_verdicts(path: str | Path) -> list[Verdict]:
+    """Verdicts out of either file this project writes.
+
+    A checkpoint keeps them at the top level; a run file nests them under each
+    summary. Reading both means a run file is still usable as a resume source,
+    which mattered the day `--out` was pointed at the checkpoint and overwrote
+    it.
+    """
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    entries = raw.get("verdicts")
+    if entries is None:
+        entries = [v for summary in raw.get("summaries", []) for v in summary.get("verdicts", [])]
+    return [Verdict.from_dict(entry) for entry in entries]
+
+
+def regrade(domain: Domain, verdict: Verdict) -> Verdict:
+    """Score a saved transcript again, without calling a model.
+
+    The store is deterministic, so replaying a transcript's calls into a fresh
+    world reproduces exactly the state that trial ended in. That makes a
+    grading fix free: when a policy rule turns out to be wrong -- as rule 9
+    was, matching a regex against generated prose and scoring three correct
+    trials as violations -- every finished trial can be re-scored from disk
+    instead of re-bought from the provider.
+    """
+    task = domain.task(verdict.task_id)
+    store = domain.store()
+    before = store.snapshot()
+    trace = Trace()
+    box = Toolbox(store, trace)
+    for event in verdict.transcript:
+        kind = event.get("kind")
+        if kind == "assistant":
+            trace.say(event.get("text", ""))
+        elif kind == "user":
+            trace.hear(event.get("text", ""))
+        elif kind == "call":
+            box.invoke(event.get("name", ""), event.get("arguments") or {})
+    after = store.snapshot()
+    store.close()
+
+    fresh = grade(task, verdict.trial, trace, before, after, domain.seed.now,
+                  error=verdict.error)
+    fresh.prompt_tokens = verdict.prompt_tokens
+    fresh.completion_tokens = verdict.completion_tokens
+    fresh.cost_usd = verdict.cost_usd
+    return fresh
+
+
 def run_solver(
     domain: Domain,
     solver: str,
@@ -169,8 +218,22 @@ def run_solver(
                 domain, task, trial, solver,
                 client=client, scripted=scripted, max_turns=max_turns,
             )
+            # A trial that died is not a measurement. A dropped connection
+            # scored as a failed trial is the same error this project refuses
+            # to make at the run level, one layer down -- so retry it once, and
+            # if the second attempt dies too, stop rather than record it.
+            if verdict.error and not verdict.error.startswith("quota"):
+                if not quiet:
+                    print(f"  {task.id:<28} trial {trial}/{k}  retrying after {verdict.error[:40]}")
+                verdict = run_trial(
+                    domain, task, trial, solver,
+                    client=client, scripted=scripted, max_turns=max_turns,
+                )
             verdicts.append(verdict)
-            if solver == "model":
+            # Only a real measurement is cached. Caching a quota-killed trial
+            # would hand tomorrow's resume a failure that never happened, which
+            # is exactly the contamination the abandonment rule exists to stop.
+            if solver == "model" and not verdict.error:
                 checkpoint.add(verdict)
             if not quiet:
                 mark = "pass" if verdict.passed else "FAIL"
@@ -178,8 +241,13 @@ def run_solver(
                     verdict.reasons + [v.name for v in verdict.violations]
                 )[:110]
                 print(f"  {task.id:<28} trial {trial}/{k}  {mark}{note}")
-            if verdict.error and verdict.error.startswith("quota"):
-                print(f"\n  daily allowance exhausted during {task.id} trial {trial}.")
+            if verdict.error:
+                reason = ("daily allowance exhausted"
+                          if verdict.error.startswith("quota")
+                          else f"unrecoverable: {verdict.error[:60]}")
+                print(f"\n  {reason} during {task.id} trial {trial}.")
+                # Dropped, not kept as a failure. It never produced a reading.
+                verdicts.pop()
                 complete = False
                 break
         if not complete:
@@ -238,10 +306,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-turns", type=int, default=agent.MAX_TURNS)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--out", default=None, help="write the run JSON here")
+    parser.add_argument("--regrade", default=None, metavar="PATH",
+                        help="re-score saved trials from their transcripts, no model calls")
     parser.add_argument("--check", action="store_true",
                         help="validate the task file, then assert oracle 1.0 and mute 0.0")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.out and args.checkpoint and Path(args.out) == Path(args.checkpoint):
+        # These are different file formats. Writing the run file over the
+        # checkpoint at the end of a partial run destroys the resume data and
+        # the next run silently re-pays for every finished trial. Ask me how I
+        # know.
+        print("--out and --checkpoint must be different files: "
+              "the run file would overwrite the checkpoint.")
+        return 2
 
     domain = Domain.load(args.domain)
     problems = validate(domain)
@@ -253,6 +332,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         return _check(domain)
+
+    if args.regrade:
+        return _regrade(domain, args)
 
     solvers = [name.strip() for name in args.solvers.split(",") if name.strip()]
     tasks = domain.select(args.tasks)
@@ -308,6 +390,43 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"wrote {target}")
     return exit_code
+
+
+def _regrade(domain: Domain, args) -> int:
+    """Re-score finished trials from disk. Costs nothing, changes no transcript."""
+    before = load_verdicts(args.regrade)
+    after = [regrade(domain, verdict) for verdict in before]
+    moved = [
+        (old, new) for old, new in zip(before, after) if old.passed != new.passed
+    ]
+    tasks = len({v.task_id for v in after})
+    summary = Summary(solver="model", model=None, k=args.k, tasks=tasks,
+                      verdicts=after, complete=False)
+
+    print(f"re-scored {len(after)} trials from {args.regrade}")
+    for old, new in moved:
+        was = "pass" if old.passed else "FAIL"
+        now = "pass" if new.passed else "FAIL"
+        why = "; ".join(new.reasons + [v.name for v in new.violations]) or "clean"
+        print(f"  {old.task_id:<28} trial {old.trial}  {was} -> {now}   {why[:60]}")
+    if not moved:
+        print("  no verdict changed")
+
+    complete = [
+        task for task in {v.task_id for v in after}
+        if len([v for v in after if v.task_id == task]) == args.k
+    ]
+    print(f"\n{len(complete)} of {len(domain.tasks)} tasks have all {args.k} trials.")
+    if args.out:
+        target = Path(args.out)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"meta": {"regraded_from": str(args.regrade)},
+                        "verdicts": [v.as_dict() for v in after]}, indent=2),
+            encoding="utf-8",
+        )
+        print(f"wrote {target}")
+    return 0
 
 
 def _check(domain: Domain) -> int:

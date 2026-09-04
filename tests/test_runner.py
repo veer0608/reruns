@@ -4,6 +4,7 @@ import json
 
 from evals.checkpoint import Checkpoint
 from evals.runner import Summary, main, report, run_solver, run_trial
+from evals.runner import load_verdicts as runner_load, regrade as runner_regrade
 from reruns.grade import Verdict
 
 
@@ -165,3 +166,98 @@ def test_a_run_file_is_written_when_asked(tmp_path, capsys):
     written = json.loads(out.read_text(encoding="utf-8"))
     assert written["summaries"][0]["pass_at_1"] == 1.0
     assert len(written["summaries"][0]["verdicts"]) == 15
+
+
+def test_out_may_not_overwrite_the_checkpoint(tmp_path, capsys):
+    """They are different file formats. Pointing both at one path destroyed a
+    60 trial checkpoint on the first real run of this project."""
+    same = tmp_path / "run.json"
+    assert main(["--solvers", "oracle", "--checkpoint", str(same), "--out", str(same)]) == 2
+    assert "must be different files" in capsys.readouterr().out
+
+
+def test_a_dead_trial_is_not_cached(domain, tmp_path, monkeypatch):
+    """A quota-killed trial cached as a failure hands tomorrow's resume a
+    result that never happened, which is the abandonment rule defeated from
+    inside."""
+    import evals.runner as runner
+
+    path = tmp_path / "run.json"
+
+    def dies(domain_, task, trial, solver, **kwargs):
+        one = verdict(task.id, trial, False)
+        one.error = "quota: 429 tokens per day"
+        return one
+
+    monkeypatch.setattr(runner, "run_trial", dies)
+    got = run_solver(domain, "model", k=1, tasks=domain.tasks[:1], client=None,
+                     scripted=True, checkpoint=Checkpoint.load(path),
+                     max_turns=12, quiet=True)
+    assert not got.complete
+    assert got.verdicts == []
+    assert not Checkpoint.load(path).has(domain.tasks[0].id, 1)
+
+
+def test_a_dead_trial_in_an_old_checkpoint_is_ignored(domain, tmp_path):
+    path = tmp_path / "run.json"
+    checkpoint = Checkpoint.load(path)
+    clean = verdict("a", 1, True)
+    dead = verdict("a", 2, False)
+    dead.error = "quota: 429"
+    checkpoint.verdicts[("a", 1)] = clean
+    checkpoint.verdicts[("a", 2)] = dead
+    checkpoint.save()
+
+    reloaded = Checkpoint.load(path)
+    assert reloaded.has("a", 1)
+    assert not reloaded.has("a", 2), "a trial that never ran must be re-run"
+
+
+def test_a_dropped_connection_is_retried_before_it_counts(domain, monkeypatch):
+    import evals.runner as runner
+
+    attempts = []
+
+    def flaky(domain_, task, trial, solver, **kwargs):
+        attempts.append(trial)
+        one = verdict(task.id, trial, len(attempts) > 1)
+        if len(attempts) == 1:
+            one.error = "llm: RemoteDisconnected"
+        return one
+
+    monkeypatch.setattr(runner, "run_trial", flaky)
+    got = run_solver(domain, "model", k=1, tasks=domain.tasks[:1], client=None,
+                     scripted=True, checkpoint=Checkpoint.load(None),
+                     max_turns=12, quiet=True)
+    assert len(attempts) == 2
+    assert got.complete and got.pass_at_1 == 1.0
+
+
+def test_regrading_a_transcript_reproduces_its_verdict(domain):
+    """The guarantee that makes --regrade trustworthy. Replay must land on the
+    same answer, or re-scoring from disk is inventing results."""
+    for task in domain.tasks:
+        original = run_trial(domain, task, 1, "oracle")
+        again = runner_regrade(domain, original)
+        assert again.as_dict() == original.as_dict(), task.id
+
+
+def test_regrading_picks_up_a_policy_fix_without_a_model(domain):
+    """A trial graded under a broken rule is re-scored from its own transcript."""
+    task = domain.task("refund_original_payment")
+    original = run_trial(domain, task, 1, "oracle")
+    assert original.passed
+
+    from reruns.grade import grade as grade_fn
+    stale = Verdict.from_dict(original.as_dict())
+    from reruns.policy import Violation
+    stale.violations = [Violation(9, "store_credit_default", "wrongly flagged")]
+    assert not stale.passed
+
+    assert runner_regrade(domain, stale).passed
+
+
+def test_load_verdicts_reads_a_run_file_as_well_as_a_checkpoint(tmp_path):
+    out = tmp_path / "run.json"
+    assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
+    assert len(runner_load(out)) == 15

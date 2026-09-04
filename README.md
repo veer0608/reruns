@@ -107,19 +107,31 @@ question.
 
 ## Current status
 
-**No model number yet.** The harness is finished and self-checking; the
-measurement is the next piece of work and needs a day's token budget. The model
-loop itself is verified live (two tasks against `gemini-flash-lite-latest`,
-both passed) but two tasks at k=1 is a smoke test, not a score, and it is not
-reported as one.
+**No score yet.** The first full run against `gemini-flash-lite-latest`
+reached 60 of 75 trials before the day's token allowance ran out, so 12 of the
+15 tasks have all five trials and three have none. By this project's own rule
+that is not a score and none is printed here. The remaining trials resume from
+the checkpoint.
 
-That smoke test earned its keep. On the first live trial the simulated customer
-improvised a request the task had never given it, asking to be refunded to its
-card. The agent obliged, correctly, and failed a task whose expected state says
-store credit: a task failure caused entirely by the customer. Across five
-trials that noise lands squarely on the number this project exists to report.
-The customer is now told to want only what its brief says, the briefs pin the
-choice, and both are held by tests.
+What the partial run did produce is three bugs in the harness, all of which
+would have made the eventual number wrong:
+
+- **Rule 9 was scoring the harness, not the model.** Whether the customer had
+  asked to be refunded to their card was matched with a regex over generated
+  prose. The simulator said "I don't want store credit. I want it back on the
+  card I paid with", which matched none of the patterns, and three trials in
+  which the agent did exactly the right thing were recorded as policy
+  violations. What the customer wants is a property of the scenario, so it is
+  now declared in the task and read from there.
+- **A trial killed by the token cap was cached as a failure**, so the resume
+  would have counted a trial that never ran as one the agent got wrong. That
+  is the abandonment rule defeated from inside the checkpoint.
+- **`--out` pointed at the `--checkpoint` path overwrote it**, which is how the
+  first 60 trials nearly had to be bought twice.
+
+All three are fixed and held by tests. The 60 finished trials were recovered
+and re-scored offline with `--regrade`, which moved exactly the three trials
+rule 9 had wrongly failed and nothing else.
 
 The scaffolding that produces a number is complete, tested, and honest about
 running out:
@@ -146,6 +158,15 @@ tasks. Every trial keeps its whole transcript in the run file, because a
 failing trial you cannot read is one nobody can act on, and re-running it to
 find out what happened costs a second budget.
 
+Those transcripts also make grading fixes free. `--regrade` replays a saved
+trial's calls into a fresh world and scores it again without touching a model,
+so when a rule turns out to be wrong the finished trials are re-scored from
+disk rather than re-bought.
+
+```bash
+python -m evals.runner --regrade runs/first.json --k 5 --out runs/first-regraded.json
+```
+
 ## Running it
 
 Everything except the model solver runs on a fresh clone with no key and no
@@ -171,7 +192,7 @@ The real measurement, once a budget is in hand (`GROQ_API_KEY` or
 `GEMINI_API_KEY` in a gitignored `.env`):
 
 ```bash
-python -m evals.runner --solvers model --k 5 --checkpoint runs/first.json --out runs/first.json
+python -m evals.runner --solvers model --k 5 --checkpoint runs/first.json --out runs/first-report.json
 ```
 
 ## Layout
