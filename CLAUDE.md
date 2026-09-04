@@ -82,8 +82,20 @@ hardest here:
 
 ## Environment
 
-The key lives in a gitignored `.env` (`GROQ_API_KEY`, `GEMINI_API_KEY`), parsed
-by `llm.py`'s own `load_dotenv`, which handles the UTF-16 PowerShell writes.
+There is deliberately **no `.env` in this repo**. `GEMINI_API_KEY` comes from
+the user environment instead, so a second copy of a live key is not sitting
+inside a project directory. `llm.py`'s `load_dotenv` uses `setdefault`, so an
+environment variable wins and a `.env` is simply never found.
+
+Check before a run that would otherwise waste a day:
+
+```powershell
+if ($env:GEMINI_API_KEY) { "key present" } else { "NO KEY" }
+```
+
+A variable set at User scope reaches only processes started afterwards, so an
+app that was already open when it was set will not see it until it restarts.
+
 `llm.py` is lifted from schemablind on purpose; fixes worth having belong in
 both.
 
