@@ -99,3 +99,22 @@ state names a refund method says so in the customer's brief.
 If a run shows tasks failing on a field the customer could have opinions about,
 read the transcript in the run JSON before touching the agent. It is more often
 the brief than the model.
+
+## Known limitation: the customer can hang up mid-action
+
+The episode ends when the simulated customer stops, and it stops on what the
+agent *says*. An agent that announces "I am going to refund 45.99" and would
+have called the tool on its next turn never gets that turn: the customer reads
+the announcement as completion, replies with the stop token, and the loop ends
+with the world unchanged.
+
+This cost `ambiguous_order` two of its four measured trials in the first run.
+Both transcripts end on the announcement; the two that passed are identical
+except the agent called the tool in the same turn it spoke.
+
+**Deliberately not fixed during the first run.** The fix -- give the agent one
+final turn after the customer stops, to complete anything it has announced --
+changes agent behaviour, so it invalidates every trial measured without it.
+The plan is to finish the current run, publish it with this named as a
+limitation, then fix it and re-run as a second measurement. Do not quietly
+change this mid-run.

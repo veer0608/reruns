@@ -238,6 +238,14 @@ hardcodes retail.
 
 ## What this does not measure
 
+The episode ends when the simulated customer stops, and it stops on what the
+agent says rather than on what the agent has done. An agent that announces a
+refund and would have issued it on its next turn never gets that turn. Two of
+`ambiguous_order`'s measured trials failed exactly this way, one tool call
+short, and the two that passed differ only in having spoken and acted in the
+same turn. That is the harness costing the agent trials, it is not fixed in
+the run reported above, and the fix is the first change to the next one.
+
 The fifteen tasks are hand-written, not sampled from real support logs, so the
 number describes this suite and not customer support. The simulated customer is
 cooperative in the sense that it wants a legitimate outcome; nothing here tests
