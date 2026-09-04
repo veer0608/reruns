@@ -197,8 +197,7 @@
       }
     ],
     "must_call": [
-      "find_customer",
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "cancel_order",
@@ -254,8 +253,7 @@
       }
     ],
     "must_call": [
-      "find_customer",
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "refund_item",
@@ -403,8 +401,7 @@
       }
     ],
     "must_call": [
-      "find_customer",
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "refund_item",
@@ -607,8 +604,7 @@
       }
     ],
     "must_call": [
-      "find_customer",
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "change_address",
@@ -648,7 +644,7 @@
       }
     ],
     "must_call": [
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "refund_item",
@@ -1035,8 +1031,7 @@
       }
     ],
     "must_call": [
-      "find_customer",
-      "escalate_to_human"
+      "find_customer"
     ],
     "forbid_call": [
       "refund_item",

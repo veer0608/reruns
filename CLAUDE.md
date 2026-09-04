@@ -100,6 +100,29 @@ If a run shows tasks failing on a field the customer could have opinions about,
 read the transcript in the run JSON before touching the agent. It is more often
 the brief than the model.
 
+## Escalation is asked for, not required
+
+Rule 12 of `policy.md` still tells the agent to escalate with
+`escalate_to_human` and stop. The grader no longer insists on the call: refusal
+tasks require `find_customer` instead, so a considered refusal in words passes
+and an agent that never read the message still fails.
+
+This was Veer's call after the first run, where six of eleven failures were
+agents that refused correctly, explained the policy accurately, offered a
+sensible alternative, and simply did not reach for the tool. Re-scoring the
+banked trials moved those six to passes and nothing else, which is worth
+knowing about the headline: a single grading decision was most of the gap.
+Say so wherever the number is reported.
+
+`policy.md` was deliberately left unedited. Its text goes into the system
+prompt verbatim, so changing a word of it changes agent behaviour and
+invalidates every banked trial. The wording can be revisited at the start of
+the next measurement, not the middle of this one.
+
+`must_call` counts attempts and `forbid_call` counts successes, for a reason
+`check_calls` documents: `unknown_email`'s correct first move is a lookup that
+fails, so requiring a successful one requires the impossible.
+
 ## Known limitation: the customer can hang up mid-action
 
 The episode ends when the simulated customer stops, and it stops on what the

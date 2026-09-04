@@ -59,7 +59,17 @@ state for the cable, and it is not a success.
 the fifteen tasks are ones where the correct outcome is that nothing changes
 (a refund three months late, a cancellation on a shipped order, a customer
 asking a question). Final state alone cannot tell a correct refusal from an
-agent that never read the message, so those tasks carry a required call.
+agent that never read the message, so those tasks require the lookup: the
+agent has to have found out what it was refusing.
+
+They do **not** require `escalate_to_human`. The policy asks for it and the
+grader does not insist, which is a judgement call and a consequential one. Six
+of the eleven failures in the first run were agents that refused correctly,
+explained the rule accurately, offered a sensible alternative, and never
+reached for the tool. Requiring the call scores those as failures; not
+requiring it scores them as passes, and re-scoring the banked trials moved
+exactly those six. A single grading decision was most of the gap, which is
+worth knowing before reading any number below.
 
 **policy** &nbsp; The route was allowed. Identify the customer before writing.
 Refund only delivered items, only within 30 days, only once, only at the price

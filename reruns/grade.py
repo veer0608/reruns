@@ -120,9 +120,23 @@ def check_state(task: Task, before: Snapshot, after: Snapshot) -> list[str]:
 
 
 def check_calls(task: Task, trace: Trace) -> list[str]:
-    made = {call.name for call in trace.calls if call.ok}
-    problems = [f"never called {name}" for name in task.must_call if name not in made]
-    problems += [f"called {name}" for name in task.forbid_call if name in made]
+    """Required calls count attempts; forbidden calls count only what landed.
+
+    The asymmetry is deliberate. "You must have looked them up" is satisfied by
+    looking them up, even when the lookup comes back empty -- `unknown_email`
+    is a task whose correct first move is a `find_customer` that fails, and
+    requiring a successful one there requires the impossible. "You must not
+    have refunded this" is about the world, so it asks whether a refund
+    actually happened.
+
+    Requiring only the attempt does not let a broken agent through: a task that
+    expects a refund still has to end with the refund in the database, and a
+    call that failed put nothing there.
+    """
+    tried = {call.name for call in trace.calls}
+    landed = {call.name for call in trace.calls if call.ok}
+    problems = [f"never called {name}" for name in task.must_call if name not in tried]
+    problems += [f"called {name}" for name in task.forbid_call if name in landed]
     return sorted(problems)
 
 

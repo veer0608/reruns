@@ -58,7 +58,7 @@ def test_doing_nothing_fails_a_task_that_expects_no_change(domain):
     verdict = play(domain, "big_refund_escalate", [("say", "Thanks for getting in touch.")])
     assert verdict.state_ok
     assert not verdict.calls_ok
-    assert "never called escalate_to_human" in verdict.reasons
+    assert "never called find_customer" in verdict.reasons
     assert not verdict.passed
 
 
@@ -106,14 +106,55 @@ def test_a_correct_outcome_by_a_forbidden_route_fails(domain):
     assert not sloppy.passed
 
 
-def test_a_failed_call_does_not_count_as_having_called_it(domain):
-    task = domain.task("refund_kettle")
+def test_a_required_call_counts_even_when_it_comes_back_empty(domain):
+    """`unknown_email`'s correct first move is a lookup that fails. Requiring a
+    successful one would require the impossible."""
+    task = domain.task("unknown_email")
     store = domain.store()
     trace = Trace()
     box = Toolbox(store, trace)
-    box.invoke("find_customer", {"email": "who@example.com"})
-    assert "never called find_customer" in check_calls(task, trace)
+    call = box.invoke("find_customer", {"email": "nina.kapoor@exmaple.com"})
+    assert call.ok is False
+    assert check_calls(task, trace) == []
     store.close()
+
+
+def test_a_forbidden_call_that_failed_is_not_held_against_the_agent(domain):
+    """Nothing happened. The world is where the task says it should be, and a
+    refusal the store issued is not a thing the agent did."""
+    task = domain.task("status_question")
+    store = domain.store()
+    trace = Trace()
+    box = Toolbox(store, trace)
+    box.invoke("find_customer", {"email": "omar.haddad@example.com"})
+    box.invoke("get_order", {"order_id": "o_1044"})
+    assert box.invoke("refund_item", {"item_id": "nope", "amount_cents": 1,
+                                      "method": "store_credit"}).ok is False
+    assert check_calls(task, trace) == []
+    store.close()
+
+
+def test_escalation_is_no_longer_required_to_refuse_well(domain):
+    """Rule 12 asks the agent to escalate, and the grader no longer insists on
+    the tool call. An agent that looked the order up and refused in words has
+    done the job; six trials in the first run were failed for nothing else."""
+    verdict = play(domain, "cancel_shipped_refuse", [
+        ("hear", "cancel my travel mug order, omar.haddad@example.com"),
+        ("find_customer", {"email": "omar.haddad@example.com"}),
+        ("get_order", {"order_id": "o_1044"}),
+        ("say", "That order has already shipped, so I cannot cancel it."),
+    ])
+    assert verdict.passed
+
+
+def test_refusing_without_looking_is_still_a_failure(domain):
+    """The requirement that replaced escalation. A refusal is only a refusal if
+    the agent found out what it was refusing."""
+    verdict = play(domain, "cancel_shipped_refuse", [
+        ("say", "Sorry, I cannot help with that."),
+    ])
+    assert verdict.state_ok
+    assert "never called find_customer" in verdict.reasons
 
 
 def test_state_check_is_empty_for_an_untouched_world(domain):
