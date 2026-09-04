@@ -123,21 +123,29 @@ the next measurement, not the middle of this one.
 `check_calls` documents: `unknown_email`'s correct first move is a lookup that
 fails, so requiring a successful one requires the impossible.
 
-## Known limitation: the customer can hang up mid-action
+## The customer can hang up mid-action, and the agent gets its turn anyway
 
 The episode ends when the simulated customer stops, and it stops on what the
-agent *says*. An agent that announces "I am going to refund 45.99" and would
-have called the tool on its next turn never gets that turn: the customer reads
-the announcement as completion, replies with the stop token, and the loop ends
-with the world unchanged.
+agent *says*. An agent that announced "I am going to refund 45.99" used to lose
+the turn it would have called the tool on: the customer read the announcement
+as completion, the loop ended, and the world was scored as unchanged. That cost
+`ambiguous_order` two of its four measured trials, both transcripts ending on
+the announcement one call short.
 
-This cost `ambiguous_order` two of its four measured trials in the first run.
-Both transcripts end on the announcement; the two that passed are identical
-except the agent called the tool in the same turn it spoke.
+Fixed. When the customer leaves, the agent gets a closing turn: no further
+customer input, a bracketed note that the chat has ended, and the episode
+finishes the moment it produces text without a tool call. `max_turns` still
+bounds it.
 
-**Deliberately not fixed during the first run.** The fix -- give the agent one
-final turn after the customer stops, to complete anything it has announced --
-changes agent behaviour, so it invalidates every trial measured without it.
-The plan is to finish the current run, publish it with this named as a
-limitation, then fix it and re-run as a second measurement. Do not quietly
-change this mid-run.
+**This changes agent behaviour, so it splits the measurements in two.**
+
+- Trials measured before the fix were produced by a different harness. Mixing
+  them with trials measured after it measures two systems and reports one
+  number.
+- `--no-final-turn` reproduces the old behaviour. It exists for exactly one
+  purpose: finishing the v1 run whose 58 banked trials predate the fix. The
+  resume MUST pass it.
+- Every run file records `final_turn` in its metadata, so which harness
+  produced a number is a fact on disk rather than a memory.
+- v2 is a fresh 75 trials with the default. Do not seed it from v1's
+  checkpoint.

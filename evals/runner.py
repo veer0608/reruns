@@ -124,6 +124,7 @@ def run_trial(
     client=None,
     scripted: bool = True,
     max_turns: int = agent.MAX_TURNS,
+    final_turn: bool = True,
 ) -> Verdict:
     """One task, one trial, in a world nobody else has touched."""
     store = domain.store()
@@ -132,7 +133,8 @@ def run_trial(
     toolbox = Toolbox(store, trace)
     user = agent.build_user(task, client, scripted=scripted)
     try:
-        episode = agent.run(solver, task, domain.policy, toolbox, user, client, max_turns)
+        episode = agent.run(solver, task, domain.policy, toolbox, user, client,
+                            max_turns, final_turn=final_turn)
     except Exception as exc:  # noqa: BLE001 - a crashed trial is a failed trial, not a dead run
         episode = agent.Episode(trace=trace, error=f"{type(exc).__name__}: {exc}")
     after = store.snapshot()
@@ -205,6 +207,7 @@ def run_solver(
     checkpoint: Checkpoint,
     max_turns: int,
     quiet: bool,
+    final_turn: bool = True,
 ) -> Summary:
     verdicts: list[Verdict] = []
     complete = True
@@ -217,6 +220,7 @@ def run_solver(
             verdict = run_trial(
                 domain, task, trial, solver,
                 client=client, scripted=scripted, max_turns=max_turns,
+                final_turn=final_turn,
             )
             # A trial that died is not a measurement. A dropped connection
             # scored as a failed trial is the same error this project refuses
@@ -228,6 +232,7 @@ def run_solver(
                 verdict = run_trial(
                     domain, task, trial, solver,
                     client=client, scripted=scripted, max_turns=max_turns,
+                    final_turn=final_turn,
                 )
             verdicts.append(verdict)
             # Only a real measurement is cached. Caching a quota-killed trial
@@ -304,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scripted-user", action="store_true",
                         help="replay the fixed script instead of simulating the customer")
     parser.add_argument("--max-turns", type=int, default=agent.MAX_TURNS)
+    parser.add_argument("--no-final-turn", action="store_true",
+                        help="legacy: end the episode the moment the customer stops, "
+                             "even mid-action. Only for extending a run measured "
+                             "before the final turn existed.")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--out", default=None, help="write the run JSON here")
     parser.add_argument("--dry-run", action="store_true",
@@ -358,6 +367,7 @@ def main(argv: list[str] | None = None) -> int:
         "k": args.k,
         "model": getattr(client, "model", None),
         "scripted_user": bool(args.scripted_user),
+        "final_turn": not args.no_final_turn,
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
@@ -375,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint=checkpoint,
             max_turns=args.max_turns,
             quiet=args.quiet,
+            final_turn=not args.no_final_turn,
         )
         summaries.append(summary)
         print(report(summary))

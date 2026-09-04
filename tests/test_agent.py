@@ -14,14 +14,15 @@ def call(name, **arguments):
     return ToolCall(id=f"call_{name}", name=name, arguments=arguments)
 
 
-def episode_for(domain, task_id, replies, max_turns=agent.MAX_TURNS):
+def episode_for(domain, task_id, replies, max_turns=agent.MAX_TURNS, final_turn=True):
     task = domain.task(task_id)
     store = domain.store()
     trace = Trace()
     box = Toolbox(store, trace)
     user = ScriptedUser(lines=task.scripted_user)
     client = FakeClient(replies)
-    episode = agent.run_model(task, domain.policy, box, user, client, max_turns=max_turns)
+    episode = agent.run_model(task, domain.policy, box, user, client,
+                              max_turns=max_turns, final_turn=final_turn)
     return episode, trace, store, client
 
 
@@ -159,3 +160,100 @@ def test_without_a_key_the_customer_is_the_script(domain):
     user = agent.build_user(domain.task("refund_kettle"), None, scripted=False)
     assert isinstance(user, ScriptedUser)
     assert user.open() == domain.task("refund_kettle").scripted_user[0]
+
+
+def _announce_then_act(domain, task_id, **kwargs):
+    """The exact shape of the trials the truncation cost: the agent says what
+    it is about to do, the customer reads that as done and leaves, and the tool
+    call is still one turn away."""
+    return episode_for(domain, task_id, [
+        FakeReply(tool_calls=[call("find_customer", email="nina.kapoor@example.com")]),
+        FakeReply(tool_calls=[call("get_order", order_id="o_1041")]),
+        FakeReply(text="I am going to issue a refund of 45.99 as store credit."),
+        FakeReply(tool_calls=[call("refund_item", item_id="i_1", amount_cents=4599,
+                                   method="store_credit")]),
+        FakeReply(text="Done."),
+    ], **kwargs)
+
+
+def test_the_agent_finishes_what_it_announced_after_the_customer_leaves(domain):
+    episode, trace, store, _ = _announce_then_act(domain, "refund_kettle")
+    assert "refund_item" in [c.name for c in trace.calls]
+    assert store.snapshot()["order_items"]["i_1"]["status"] == "refunded"
+    store.close()
+
+
+def test_the_legacy_behaviour_still_loses_that_trial(domain):
+    """Kept so a run measured before the fix can be extended honestly rather
+    than mixed with one measured after it."""
+    task = domain.task("refund_kettle")
+    store = domain.store()
+    trace = Trace()
+    box = Toolbox(store, trace)
+    agent.run_model(
+        task, domain.policy, box, ScriptedUser(lines=task.scripted_user[:1]),
+        FakeClient([
+            FakeReply(tool_calls=[call("find_customer", email="nina.kapoor@example.com")]),
+            FakeReply(text="I am going to issue a refund of 45.99 as store credit."),
+            FakeReply(tool_calls=[call("refund_item", item_id="i_1", amount_cents=4599,
+                                       method="store_credit")]),
+        ]),
+        final_turn=False,
+    )
+    assert "refund_item" not in [c.name for c in trace.calls]
+    assert store.snapshot()["order_items"]["i_1"]["status"] == "delivered"
+    store.close()
+
+
+def test_the_closing_prompt_is_not_recorded_as_the_customer_speaking(domain):
+    """It is a harness instruction. Putting it in the trace would make the
+    customer appear to say something they never said, which several policy
+    rules would then read."""
+    _, trace, store, _ = _announce_then_act(domain, "refund_kettle")
+    heard = [e["text"] for e in trace.events if e["kind"] == "user"]
+    assert not any("left the chat" in text for text in heard)
+    assert heard == list(domain.task("refund_kettle").scripted_user)
+    store.close()
+
+
+def test_the_customer_gets_no_further_say_once_they_have_left(domain):
+    task = domain.task("refund_kettle")
+    store = domain.store()
+    trace = Trace()
+    box = Toolbox(store, trace)
+    user = ScriptedUser(lines=task.scripted_user[:1])
+    agent.run_model(task, domain.policy, box, user, FakeClient([
+        FakeReply(text="I am going to issue a refund of 45.99."),
+        FakeReply(tool_calls=[call("refund_item", item_id="i_1", amount_cents=4599,
+                                   method="store_credit")]),
+        FakeReply(text="Done."),
+    ]))
+    assert user._at == 1, "the script must not advance after the customer has gone"
+    store.close()
+
+
+def test_the_closing_turn_does_not_run_forever(domain):
+    """One extra turn to act, then it ends on the first message with no tool
+    call. The customer leaving must not become an open-ended budget."""
+    task = domain.task("refund_kettle")
+    store = domain.store()
+    box = Toolbox(store, Trace())
+    client = FakeClient([
+        FakeReply(text="I will sort that out."),
+        FakeReply(text="Anything else?"),
+    ])
+    agent.run_model(task, domain.policy, box,
+                    ScriptedUser(lines=task.scripted_user[:1]), client, max_turns=8)
+    assert len(client.calls) == 2
+    store.close()
+
+
+def test_escalating_still_ends_it_with_no_closing_turn(domain):
+    _, trace, store, client = episode_for(domain, "big_refund_escalate", [
+        FakeReply(tool_calls=[call("escalate_to_human", reason="over the limit")]),
+        FakeReply(tool_calls=[call("refund_item", item_id="i_5", amount_cents=24900,
+                                   method="store_credit")]),
+    ])
+    assert [c.name for c in trace.calls] == ["escalate_to_human"]
+    assert len(client.calls) == 1
+    store.close()

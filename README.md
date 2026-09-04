@@ -115,6 +115,15 @@ towards the same end. Measuring pass^5 against a fixed script would only ask
 whether the agent is deterministic, which it is not, and which is not the
 question.
 
+A simulated customer stops on what the agent **says**, which is a trap worth
+knowing about. An agent that announces "I am going to refund 45.99" reads as
+finished, the customer leaves, and the tool call that would have come next
+never happens. Two trials were lost that way before it was caught, both
+transcripts ending one call short of a pass. So the agent now gets a closing
+turn when the customer leaves: no further customer input, and the episode ends
+the moment it produces text without a tool call. Runs record which behaviour
+produced them, because it changes what the number means.
+
 ## Current status
 
 **No score yet.** The first full run against `gemini-flash-lite-latest`
@@ -247,14 +256,6 @@ A domain is a directory with those three files. Nothing in the package
 hardcodes retail.
 
 ## What this does not measure
-
-The episode ends when the simulated customer stops, and it stops on what the
-agent says rather than on what the agent has done. An agent that announces a
-refund and would have issued it on its next turn never gets that turn. Two of
-`ambiguous_order`'s measured trials failed exactly this way, one tool call
-short, and the two that passed differ only in having spoken and acted in the
-same turn. That is the harness costing the agent trials, it is not fixed in
-the run reported above, and the fix is the first change to the next one.
 
 The fifteen tasks are hand-written, not sampled from real support logs, so the
 number describes this suite and not customer support. The simulated customer is

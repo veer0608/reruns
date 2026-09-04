@@ -80,6 +80,7 @@ def run_model(
     user,
     client: LLMClient,
     max_turns: int = MAX_TURNS,
+    final_turn: bool = True,
 ) -> Episode:
     episode = Episode(trace=toolbox.trace)
     opening = user.open()
@@ -88,6 +89,8 @@ def run_model(
         {"role": "system", "content": _system_prompt(policy, toolbox.store.now)},
         {"role": "user", "content": opening},
     ]
+    #: The customer has left, and the agent is finishing what it announced.
+    closing = False
 
     for _ in range(max_turns):
         try:
@@ -128,9 +131,30 @@ def run_model(
                 break
             continue
 
+        if closing:
+            # Text and no tool call, with the customer already gone. There is
+            # nothing left to finish.
+            break
+
         follow_up = user.reply(reply.text)
         if follow_up is None:
-            break
+            if not final_turn:
+                break
+            # The customer stops on what the agent SAYS, and an agent that has
+            # just announced "I am going to refund 45.99" would have called the
+            # tool on its next turn. Ending here scores the world as unchanged
+            # and the agent as having failed, one call short -- which is what
+            # happened to two `ambiguous_order` trials whose transcripts end on
+            # the announcement. So the agent keeps its turn to act. It gets no
+            # further customer input, and the moment it produces text without a
+            # tool call it is done.
+            closing = True
+            messages.append({
+                "role": "user",
+                "content": "[The customer has left the chat. Complete anything "
+                           "you have already told them you would do, then stop.]",
+            })
+            continue
         toolbox.trace.hear(follow_up)
         messages.append({"role": "user", "content": follow_up})
 
@@ -160,8 +184,8 @@ def run_oracle(task: Task, policy: str, toolbox: Toolbox, user) -> Episode:
 
 def run_mute(task: Task, policy: str, toolbox: Toolbox, user) -> Episode:
     """Acknowledge, do nothing. Must score zero on every task, including the
-    six whose correct final state is an unchanged one -- those are carried by
-    `must_call`, which is why they have it."""
+    seven whose correct final state is an unchanged one -- those are carried by
+    `must_call`, which is why they require the lookup."""
     toolbox.trace.hear(user.open())
     toolbox.trace.say("Thanks for getting in touch.")
     return Episode(trace=toolbox.trace)
@@ -190,6 +214,7 @@ def run(
     user,
     client: LLMClient | None = None,
     max_turns: int = MAX_TURNS,
+    final_turn: bool = True,
 ) -> Episode:
     if solver == "oracle":
         return run_oracle(task, policy, toolbox, user)
@@ -198,5 +223,6 @@ def run(
     if solver == "model":
         if client is None:
             raise ValueError("the model solver needs an LLM client; none was built")
-        return run_model(task, policy, toolbox, user, client, max_turns=max_turns)
+        return run_model(task, policy, toolbox, user, client, max_turns=max_turns,
+                         final_turn=final_turn)
     raise ValueError(f"unknown solver {solver!r}, expected one of {SOLVERS}")
