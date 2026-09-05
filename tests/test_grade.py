@@ -188,3 +188,39 @@ def test_a_verdict_survives_a_round_trip_through_json(domain):
     verdict = play(domain, "refund_cable_only", [("say", "nothing")])
     restored = Verdict.from_dict(verdict.as_dict())
     assert restored.as_dict() == verdict.as_dict()
+
+
+def test_three_tasks_can_be_passed_in_total_silence(domain):
+    """A known weakness, pinned deliberately so it stays visible.
+
+    Nothing in the grader requires the agent to say anything to the customer.
+    An agent that looks up an order and answers nothing passes
+    `status_question`, whose entire point is answering a question. Same for
+    `unknown_email` and `cancel_shipped_refuse`: the tool calls satisfy the
+    expectations and the customer gets silence.
+
+    v2 shows this is not hypothetical. All five `unknown_email` trials passed
+    with zero assistant turns: find_customer, escalate, not one word spoken.
+
+    It is not fixed here because fixing it changes verdicts, and 57 trials of a
+    live measurement were graded without it. It is also not a policy violation:
+    `policy.md` never tells the agent to speak, and grading against a rule the
+    agent was not given is the thing this project refuses to do. The fix is a
+    v3 change, in `policy.md` and the task expectations together.
+
+    If this test starts failing, someone has closed the hole. Good, but the
+    banked v2 trials are then no longer comparable.
+    """
+    silent = {
+        "status_question": [("find_customer", {"email": "omar.haddad@example.com"}),
+                            ("get_order", {"order_id": "o_1044"})],
+        "unknown_email": [("find_customer", {"email": "nina.kapoor@exmaple.com"}),
+                          ("escalate_to_human", {"reason": "not found"})],
+        "cancel_shipped_refuse": [("find_customer", {"email": "omar.haddad@example.com"}),
+                                  ("get_order", {"order_id": "o_1044"})],
+    }
+    for task_id, script in silent.items():
+        task = domain.task(task_id)
+        verdict = play(domain, task_id, [("hear", task.scripted_user[0]), *script])
+        assert verdict.passed, task_id
+        assert not [e for e in verdict.transcript if e["kind"] == "assistant"]

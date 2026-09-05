@@ -264,6 +264,14 @@ hardcodes retail.
 
 ## What this does not measure
 
+Nothing in the grader requires the agent to speak. Three tasks can be passed in
+total silence, `status_question` among them, and answering a question is that
+task's whole purpose. In this run all five `unknown_email` trials passed with
+zero assistant turns: look up the email, escalate, say nothing. So part of what
+those tasks measure is tool use rather than support. Closing it needs a policy
+rule and a task expectation together, and it is the first change of the next
+measurement rather than a mid-run edit to this one.
+
 The fifteen tasks are hand-written, not sampled from real support logs, so the
 number describes this suite and not customer support. The simulated customer is
 cooperative in the sense that it wants a legitimate outcome; nothing here tests

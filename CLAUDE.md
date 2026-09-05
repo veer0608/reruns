@@ -192,6 +192,30 @@ The check requires a customer turn *later* in the transcript, because
 "announced and acted in one message" and "announced, and the customer left
 before replying" look identical in a trace and only the first is a fault.
 
+## Three tasks can be passed in silence
+
+Nothing in the grader requires the agent to say anything to the customer. An
+agent that looks up an order and answers nothing passes `status_question`,
+whose entire point is answering a question. `unknown_email` and
+`cancel_shipped_refuse` are the same: the tool calls satisfy the expectations
+and the customer gets nothing.
+
+This is not hypothetical. All five `unknown_email` trials in v2 passed with
+**zero assistant turns**: `find_customer`, `escalate_to_human`, not one word
+spoken. So part of what those tasks measure is tool use rather than support.
+
+Not fixed, for two reasons. Fixing it changes verdicts, and 57 trials of a live
+measurement were graded without it. And it is not a policy violation:
+`policy.md` never tells the agent to speak, so faulting it would be grading
+against a rule the agent was never given, which is the one thing this project
+refuses to do.
+
+**First change of v3**, and it takes two edits together: a rule in `policy.md`
+requiring the agent to tell the customer what is happening, and task
+expectations that can see whether it did. `test_three_tasks_can_be_passed_in_
+total_silence` pins the current behaviour so the hole stays visible and the day
+someone closes it is a day the tests announce.
+
 ## v1 was abandoned on purpose
 
 The first run reached 60 of 75 trials and was never published as a score. It
