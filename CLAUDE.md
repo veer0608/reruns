@@ -160,6 +160,38 @@ bounds it.
 - Every run file records `final_turn` in its metadata, so which harness
   produced a number is a fact on disk rather than a memory.
 
+## Rule 7 has a strict reading, kept off
+
+`policy.md` rule 7 says: "Say the exact amount, in dollars, before you issue the
+refund. The customer has to see the number before it is final." The shipped
+check only asks whether the amount appears in an earlier assistant message, and
+deliberately counts a message that carries the tool call with it. An agent that
+says "I am going to refund 18.50" and refunds in the same breath satisfies the
+letter and defeats the sentence.
+
+v2 made that gap visible. `refund_original_payment` scored 2 of 5, and the only
+difference between the passes and the failures was this: the two that passed
+announced and waited, the customer said "no, put it on my card", and the agent
+obliged. The three that failed announced and refunded in one message, and by
+the time the customer objected the money had moved.
+
+`check(..., strict_rule_7=True)` reads the rule as written. It is **off by
+default and must stay off during a measurement** -- a run graded half one way
+and half the other is two runs. Apply it to a finished run:
+
+```bash
+python -m evals.runner --regrade runs/v2.json --k 5 --strict-rule-7
+```
+
+On v2's first 57 trials it fires on exactly the three failing
+`refund_original_payment` trials and on none of the other 54, which is the
+result worth publishing alongside the headline: the strict reading names the
+mechanism, and the shipped reading hides it inside a state diff.
+
+The check requires a customer turn *later* in the transcript, because
+"announced and acted in one message" and "announced, and the customer left
+before replying" look identical in a trace and only the first is a fault.
+
 ## v1 was abandoned on purpose
 
 The first run reached 60 of 75 trials and was never published as a score. It

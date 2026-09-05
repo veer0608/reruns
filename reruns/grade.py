@@ -149,6 +149,7 @@ def grade(
     now: str,
     *,
     error: str | None = None,
+    strict_rule_7: bool = False,
 ) -> Verdict:
     state_problems = check_state(task, before, after)
     call_problems = check_calls(task, trace)
@@ -157,7 +158,8 @@ def grade(
         trial=trial,
         state_ok=not state_problems,
         calls_ok=not call_problems,
-        violations=check_policy(trace, before, now, asked_for_card=task.asks_for_card),
+        violations=check_policy(trace, before, now, asked_for_card=task.asks_for_card,
+                                strict_rule_7=strict_rule_7),
         reasons=state_problems + call_problems,
         turns=len([e for e in trace.events if e.get("kind") == "assistant"]),
         error=error,

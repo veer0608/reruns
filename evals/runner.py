@@ -162,7 +162,7 @@ def load_verdicts(path: str | Path) -> list[Verdict]:
     return [Verdict.from_dict(entry) for entry in entries]
 
 
-def regrade(domain: Domain, verdict: Verdict) -> Verdict:
+def regrade(domain: Domain, verdict: Verdict, strict_rule_7: bool = False) -> Verdict:
     """Score a saved transcript again, without calling a model.
 
     The store is deterministic, so replaying a transcript's calls into a fresh
@@ -189,7 +189,7 @@ def regrade(domain: Domain, verdict: Verdict) -> Verdict:
     store.close()
 
     fresh = grade(task, verdict.trial, trace, before, after, domain.seed.now,
-                  error=verdict.error)
+                  error=verdict.error, strict_rule_7=strict_rule_7)
     fresh.prompt_tokens = verdict.prompt_tokens
     fresh.completion_tokens = verdict.completion_tokens
     fresh.cost_usd = verdict.cost_usd
@@ -319,6 +319,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="list the trials a run would execute, and stop")
     parser.add_argument("--regrade", default=None, metavar="PATH",
                         help="re-score saved trials from their transcripts, no model calls")
+    parser.add_argument("--strict-rule-7", action="store_true",
+                        help="regrade only: read rule 7 as written, so announcing and "
+                             "refunding in one message counts as the customer never "
+                             "having seen the number before it was final")
     parser.add_argument("--check", action="store_true",
                         help="validate the task file, then assert oracle 1.0 and mute 0.0")
     parser.add_argument("--quiet", action="store_true")
@@ -447,22 +451,41 @@ def _dry_run(domain: Domain, tasks, args) -> int:
 def _regrade(domain: Domain, args) -> int:
     """Re-score finished trials from disk. Costs nothing, changes no transcript."""
     before = load_verdicts(args.regrade)
-    after = [regrade(domain, verdict) for verdict in before]
+    after = [regrade(domain, verdict, args.strict_rule_7) for verdict in before]
+    # Pass/fail flips are not the only thing a regrade can change. A rule that
+    # adds a violation to a trial already failing on state flips nothing, and
+    # reporting only flips hid exactly that: the strict reading of rule 7 found
+    # the mechanism behind three failures and this printed "no verdict changed".
     moved = [
-        (old, new) for old, new in zip(before, after) if old.passed != new.passed
+        (old, new) for old, new in zip(before, after)
+        if old.passed != new.passed
+        or {v.name for v in old.violations} != {v.name for v in new.violations}
     ]
     tasks = len({v.task_id for v in after})
     summary = Summary(solver="model", model=None, k=args.k, tasks=tasks,
                       verdicts=after, complete=False)
 
-    print(f"re-scored {len(after)} trials from {args.regrade}")
+    reading = " under rule 7 as written" if args.strict_rule_7 else ""
+    print(f"re-scored {len(after)} trials from {args.regrade}{reading}")
     for old, new in moved:
         was = "pass" if old.passed else "FAIL"
         now = "pass" if new.passed else "FAIL"
-        why = "; ".join(new.reasons + [v.name for v in new.violations]) or "clean"
-        print(f"  {old.task_id:<28} trial {old.trial}  {was} -> {now}   {why[:60]}")
+        verdict = f"{was} -> {now}" if old.passed != new.passed else f"{now}, same"
+        gained = {v.name for v in new.violations} - {v.name for v in old.violations}
+        lost = {v.name for v in old.violations} - {v.name for v in new.violations}
+        change = ", ".join(
+            [f"+{name}" for name in sorted(gained)] + [f"-{name}" for name in sorted(lost)]
+        )
+        why = change or "; ".join(new.reasons) or "clean"
+        print(f"  {old.task_id:<28} trial {old.trial}  {verdict:<12} {why[:58]}")
     if not moved:
-        print("  no verdict changed")
+        print("  nothing changed: no verdict flipped and no violation moved")
+
+    violations = Counter(f"{v.rule} {v.name}" for one in after for v in one.violations)
+    if violations:
+        print("\n  violations under this reading:")
+        for rule, count in violations.most_common():
+            print(f"    {count:>3}x  rule {rule}")
 
     complete = [
         task for task in {v.task_id for v in after}

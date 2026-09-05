@@ -284,3 +284,47 @@ def test_dry_run_with_no_checkpoint_runs_everything(domain, capsys):
     assert main(["--dry-run", "--k", "5"]) == 0
     out = capsys.readouterr().out
     assert "0 trials already banked, 75 to run" in out
+
+
+def test_regrade_reports_a_violation_change_that_flips_nothing(domain, tmp_path, capsys):
+    """A rule that adds a violation to a trial already failing on state flips no
+    verdict. Reporting only flips hid exactly that: the strict reading of rule 7
+    found the mechanism behind three failures and the summary said nothing
+    changed."""
+    out = tmp_path / "oracle.json"
+    assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
+    capsys.readouterr()
+
+    saved = runner_load(out)
+    stale = [Verdict.from_dict(v.as_dict()) for v in saved]
+    from reruns.policy import Violation
+
+    stale[0].violations = [Violation(3, "delivered_items_only", "invented")]
+    path = tmp_path / "stale.json"
+    path.write_text(json.dumps({"verdicts": [v.as_dict() for v in stale]}), encoding="utf-8")
+
+    assert main(["--regrade", str(path), "--k", "1"]) == 0
+    printed = capsys.readouterr().out
+    assert "-delivered_items_only" in printed
+    assert "nothing changed" not in printed
+
+
+def test_regrade_says_so_when_truly_nothing_moved(domain, tmp_path, capsys):
+    out = tmp_path / "oracle.json"
+    assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
+    capsys.readouterr()
+    assert main(["--regrade", str(out), "--k", "1"]) == 0
+    assert "nothing changed" in capsys.readouterr().out
+
+
+def test_strict_rule_7_is_a_regrade_reading_not_a_default(domain, tmp_path, capsys):
+    """The flag must not change what a live run records, or a measurement half
+    graded each way becomes two measurements."""
+    out = tmp_path / "oracle.json"
+    assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
+    plain = [v.as_dict() for v in runner_load(out)]
+
+    from reruns.dataset import Domain as D
+    strict = [runner_regrade(D.load(), Verdict.from_dict(v), True).as_dict() for v in plain]
+    assert [v["violations"] for v in plain] == [v["violations"] for v in strict], \
+        "the oracle announces and waits, so neither reading should fault it"

@@ -67,16 +67,30 @@ def _order_of_item(seed: Snapshot, item_id: str) -> dict | None:
 
 
 def check(
-    trace: Trace, seed: Snapshot, now: str, *, asked_for_card: bool = False
+    trace: Trace,
+    seed: Snapshot,
+    now: str,
+    *,
+    asked_for_card: bool = False,
+    strict_rule_7: bool = False,
 ) -> list[Violation]:
     """Every rule the conversation broke, in rule order.
 
     `asked_for_card` is the scenario's own statement of whether the customer
     asked to be refunded to their original payment method. See the note above.
+
+    `strict_rule_7` reads rule 7 as written rather than as originally coded.
+    It is **off by default and must stay off during a measurement**: turning it
+    on changes verdicts, and a run graded half one way and half the other is
+    two runs. It exists to be applied to a finished run through `--regrade`,
+    where it costs nothing and reports a second, stricter reading of the same
+    transcripts. See `_amount_seen_before_final`.
     """
     found: list[Violation] = []
     for rule in _RULES:
         found.extend(rule(trace, seed, now, asked_for_card))
+    if strict_rule_7:
+        found.extend(_amount_seen_before_final(trace, seed, now, asked_for_card))
     return sorted(found, key=lambda v: (v.rule, v.detail))
 
 
@@ -226,6 +240,66 @@ def _amount_stated_first(
                     Violation(7, "amount_stated_first",
                               f"refunded {spoken} without saying it first")
                 )
+    return out
+
+
+def _amount_seen_before_final(
+    trace: Trace, seed: Snapshot, now: str, asked: bool = False
+) -> list[Violation]:
+    """Rule 7, read as written. Opt-in, never on during a measurement.
+
+    The rule says: "Say the exact amount, in dollars, before you issue the
+    refund. The customer has to see the number before it is final." The shipped
+    check only asks whether the amount appears in an assistant message earlier
+    in the trace, and deliberately counts a message that carries the tool call
+    with it. That is a real gap: an agent that says "I am going to refund
+    18.50" and refunds in the same breath satisfies the letter and defeats the
+    sentence, because the customer never had a turn in which the number was not
+    yet final.
+
+    v2 made the gap visible. `refund_original_payment` went 2 of 5, and the
+    only difference between the passes and the failures was this: the two that
+    passed announced and waited, the customer said "no, put it on my card", and
+    the agent obliged. The three that failed announced and refunded in one
+    message, and by the time the customer objected the money had moved and all
+    the agent could do was escalate.
+
+    The check has to distinguish "acted in the same message" from "announced,
+    and the customer left before replying", which is legitimate: they saw the
+    number and did not object. Both look identical in the trace, an assistant
+    message directly followed by the call. So the violation requires a customer
+    event *later* in the transcript, which proves the customer was still there
+    and was simply not given the turn. An agent that announces and acts on the
+    very last exchange is not flagged. That is lenient, and lenient is the
+    right direction for a rule used to fail trials.
+    """
+    out = []
+    events = trace.events
+    for index, event in enumerate(events):
+        if event.get("kind") != "call" or event["name"] != "refund_item" or not event["ok"]:
+            continue
+        try:
+            amount = int(event["arguments"].get("amount_cents"))
+        except (TypeError, ValueError):
+            continue
+        spoken = money(amount)
+        previous = events[index - 1] if index else None
+        stated_in_the_same_breath = (
+            previous is not None
+            and previous.get("kind") == "assistant"
+            and spoken in previous.get("text", "")
+        )
+        if not stated_in_the_same_breath:
+            continue
+        customer_spoke_later = any(
+            later.get("kind") == "user" for later in events[index + 1:]
+        )
+        if customer_spoke_later:
+            out.append(
+                Violation(7, "amount_seen_before_final",
+                          f"announced and refunded {spoken} in one message, "
+                          "leaving the customer no turn to object")
+            )
     return out
 
 

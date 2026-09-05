@@ -251,3 +251,68 @@ def test_money_formats_cents_the_way_the_rule_reads():
     assert money(4599) == "45.99"
     assert money(990) == "9.90"
     assert money(24900) == "249.00"
+
+
+def strict(domain, script, asked_for_card=False):
+    store = domain.store()
+    seed = store.snapshot()
+    trace = Trace()
+    box = Toolbox(store, trace)
+    for kind, payload in script:
+        if kind == "say":
+            trace.say(payload)
+        elif kind == "hear":
+            trace.hear(payload)
+        else:
+            box.invoke(kind, payload)
+    found = check(trace, seed, store.now, asked_for_card=asked_for_card, strict_rule_7=True)
+    store.close()
+    return found
+
+
+ANNOUNCE = ("say", "I am going to issue a refund of 45.99 to your store credit.")
+REFUND = ("refund_item", {"item_id": "i_1", "amount_cents": 4599, "method": "store_credit"})
+
+
+def test_strict_rule_7_is_off_unless_asked_for(domain):
+    """It must never fire during a measurement. A run graded half one way and
+    half the other is two runs."""
+    assert run(domain, [*identified(), ANNOUNCE, REFUND, ("hear", "wait, no")]) == []
+
+
+def test_strict_rule_7_flags_announcing_and_acting_in_one_message(domain):
+    """The v2 failure. The customer objects afterwards, which proves they were
+    still there and were simply never given the turn."""
+    found = strict(domain, [*identified(), ANNOUNCE, REFUND,
+                            ("hear", "wait, I wanted that on my card")])
+    assert any(v.name == "amount_seen_before_final" for v in found)
+
+
+def test_strict_rule_7_accepts_announcing_and_waiting(domain):
+    """The two trials that passed. An intervening customer turn is the whole
+    difference between these and the ones that failed."""
+    assert strict(domain, [
+        *identified(), ANNOUNCE,
+        ("hear", "yes please go ahead"),
+        REFUND,
+    ]) == []
+
+
+def test_strict_rule_7_does_not_punish_a_customer_who_left(domain):
+    """Announce, customer leaves without replying, agent finishes on its
+    closing turn. They saw the number and did not object, so the sentence the
+    rule is built on was honoured. Identical in the trace to the violation
+    above except that nobody speaks afterwards."""
+    assert strict(domain, [*identified(), ANNOUNCE, REFUND]) == []
+    assert strict(domain, [*identified(), ANNOUNCE, REFUND, ("say", "All done.")]) == []
+
+
+def test_strict_rule_7_still_needs_the_amount_said_at_all(domain):
+    """The original rule 7 does that job and is not replaced by this one."""
+    found = strict(domain, [
+        *identified(),
+        ("say", "I will sort that out for you now."),
+        REFUND,
+        ("hear", "thanks"),
+    ])
+    assert {v.name for v in found} == {"amount_stated_first"}
