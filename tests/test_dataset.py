@@ -12,17 +12,36 @@ def test_the_shipped_domain_is_valid(domain):
     assert validate(domain) == []
 
 
-def test_fifteen_tasks_split_between_acting_and_leaving_alone(domain):
-    """Eight tasks where the world must move and seven where it must not.
+def test_the_suite_is_split_between_acting_and_leaving_alone(domain):
+    """Twelve tasks where the world must move and eight where it must not.
 
     The split is deliberate and worth keeping near even. A suite weighted
     towards acting rewards an eager agent; one weighted towards refusing
     rewards a timid one, and both would report a number that says more about
     the task mix than about the model.
     """
-    assert len(domain.tasks) == 15
+    assert len(domain.tasks) == 20
     still = [task for task in domain.tasks if task.read_only]
-    assert len(still) == 7, [t.id for t in still]
+    assert len(still) == 8, [t.id for t in still]
+
+
+def test_the_hard_five_are_present_and_shaped_right(domain):
+    """Nine of the first twelve measured tasks never failed a trial across two
+    runs and two harnesses, so the suite was mostly measuring nothing. These
+    five target the one failure mode those runs actually produced -- acting
+    before the requirements are in -- and the shapes around it.
+    """
+    hard = {
+        "mixed_refund_split": "refund what you can, escalate what you cannot",
+        "changes_mind_midway": "the request is withdrawn before it is carried out",
+        "wrong_order_confidently": "the named order belongs to somebody else",
+        "late_correction": "the customer switches item mid-flow",
+        "refusal_then_allowed": "a no on one request is not a no on the next",
+    }
+    for task_id in hard:
+        task = domain.task(task_id)
+        assert task.scripted_user and task.solution, task_id
+        assert task.must_call, task_id
 
 
 def test_every_refusal_task_requires_a_call(domain):

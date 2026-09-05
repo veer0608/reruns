@@ -192,6 +192,33 @@ The check requires a customer turn *later* in the transcript, because
 "announced and acted in one message" and "announced, and the customer left
 before replying" look identical in a trace and only the first is a fault.
 
+## Nine of twelve tasks never failed, so five harder ones were added
+
+Across v1 and v2, two runs on two harnesses, nine of the twelve fully measured
+tasks passed every single trial: 88 trials without a failure. The whole
+discriminating power of the suite sat on `refund_original_payment`,
+`address_change_shipped_refuse` and `ambiguous_order`, and two of those only
+ever failed for reasons since fixed. A pass^5 from that suite would mostly have
+been reporting that the easy tasks are easy.
+
+Five tasks were added before v3 banked anything, aimed at the one failure mode
+those runs actually produced -- the agent acting before the requirements are in
+-- and the shapes around it:
+
+    mixed_refund_split       refund the 9.90 cable, escalate the 249.00 chair
+    changes_mind_midway      the cancellation is withdrawn before it happens
+    wrong_order_confidently  the order named belongs to another customer
+    late_correction          the customer switches item mid-flow
+    refusal_then_allowed     a no on one request is not a no on the next
+
+The suite is now 20 tasks, 12 acting and 8 leaving alone, and `--k 5` is 100
+trials at roughly 1.3M tokens, so budget two days.
+
+**Adding or removing a task changes what pass^k means.** The harness guard does
+not catch that, because the task set is not something the agent perceives, so a
+suite change needs a fresh checkpoint by hand. `--dry-run` will show the trial
+count moving, which is the signal to start a new one.
+
 ## Harness versions, and the guard that enforces them
 
 `agent.HARNESS_VERSION` is bumped whenever anything the agent can perceive or

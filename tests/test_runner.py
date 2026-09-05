@@ -160,12 +160,12 @@ def test_the_runner_says_so_when_there_is_no_key(monkeypatch, capsys):
     assert "no API key" in capsys.readouterr().out
 
 
-def test_a_run_file_is_written_when_asked(tmp_path, capsys):
+def test_a_run_file_is_written_when_asked(domain, tmp_path, capsys):
     out = tmp_path / "oracle.json"
     assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
     written = json.loads(out.read_text(encoding="utf-8"))
     assert written["summaries"][0]["pass_at_1"] == 1.0
-    assert len(written["summaries"][0]["verdicts"]) == 15
+    assert len(written["summaries"][0]["verdicts"]) == len(domain.tasks)
 
 
 def test_out_may_not_overwrite_the_checkpoint(tmp_path, capsys):
@@ -257,10 +257,10 @@ def test_regrading_picks_up_a_policy_fix_without_a_model(domain):
     assert runner_regrade(domain, stale).passed
 
 
-def test_load_verdicts_reads_a_run_file_as_well_as_a_checkpoint(tmp_path):
+def test_load_verdicts_reads_a_run_file_as_well_as_a_checkpoint(domain, tmp_path):
     out = tmp_path / "run.json"
     assert main(["--solvers", "oracle", "--quiet", "--out", str(out)]) == 0
-    assert len(runner_load(out)) == 15
+    assert len(runner_load(out)) == len(domain.tasks)
 
 
 def test_dry_run_spends_nothing_and_says_what_a_run_would(domain, tmp_path, capsys):
@@ -283,7 +283,7 @@ def test_dry_run_spends_nothing_and_says_what_a_run_would(domain, tmp_path, caps
 def test_dry_run_with_no_checkpoint_runs_everything(domain, capsys):
     assert main(["--dry-run", "--k", "5"]) == 0
     out = capsys.readouterr().out
-    assert "0 trials already banked, 75 to run" in out
+    assert f"0 trials already banked, {len(domain.tasks) * 5} to run" in out
 
 
 def test_regrade_reports_a_violation_change_that_flips_nothing(domain, tmp_path, capsys):

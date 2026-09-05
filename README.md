@@ -290,8 +290,13 @@ those tasks measure is tool use rather than support. Closing it needs a policy
 rule and a task expectation together, and it is the first change of the next
 measurement rather than a mid-run edit to this one.
 
-The fifteen tasks are hand-written, not sampled from real support logs, so the
-number describes this suite and not customer support. The simulated customer is
+The twenty tasks are hand-written, not sampled from real support logs, so the
+number describes this suite and not customer support. Five of them were added
+after two runs showed that nine of the twelve measured tasks had never failed a
+single trial, 88 trials without one, which meant the suite was mostly
+confirming that the easy cases are easy. The five aim at the one failure mode
+those runs did produce: the agent acting before the customer has finished
+saying what they want. The simulated customer is
 cooperative in the sense that it wants a legitimate outcome; nothing here tests
 an adversarial user trying to talk an agent into a refund by force. And there
 is one domain. A second one is a directory, but until it exists, a good score

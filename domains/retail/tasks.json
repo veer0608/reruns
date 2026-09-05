@@ -1039,5 +1039,400 @@
       "change_address"
     ],
     "expect": {}
+  },
+  {
+    "id": "mixed_refund_split",
+    "title": "Refund the part you can, hand off the part you cannot",
+    "goal": "You are Priya Raman (priya.raman@example.com). Both things in your chair order are faulty: the ergonomic chair has a cracked base and the USB-C cable does not work. You want your money back for both. You have no preference about how the money comes back to you; store credit is fine.",
+    "scripted_user": [
+      "My chair order was a disaster. The chair base is cracked and the USB-C cable does not work either. I want refunds for both. priya.raman@example.com.",
+      "Yes, both of them please.",
+      "Alright, do what you can and pass the rest on.",
+      "Thanks."
+    ],
+    "solution": [
+      {
+        "call": {
+          "name": "find_customer",
+          "arguments": {
+            "email": "priya.raman@example.com"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "list_orders",
+          "arguments": {
+            "customer_id": "c_3"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "get_order",
+          "arguments": {
+            "order_id": "o_1045"
+          }
+        }
+      },
+      {
+        "say": "The USB-C Cable is 9.90 and I can refund that now. The Ergo Chair is 249.00, which is above what I am allowed to refund myself."
+      },
+      {
+        "call": {
+          "name": "refund_item",
+          "arguments": {
+            "item_id": "i_6",
+            "amount_cents": 990,
+            "method": "store_credit"
+          }
+        }
+      },
+      {
+        "say": "Refunded 9.90 to store credit. I am passing the chair to a colleague."
+      },
+      {
+        "call": {
+          "name": "escalate_to_human",
+          "arguments": {
+            "reason": "chair refund of 249.00 exceeds the agent limit"
+          }
+        }
+      }
+    ],
+    "must_call": [
+      "find_customer",
+      "get_order",
+      "refund_item",
+      "escalate_to_human"
+    ],
+    "forbid_call": [
+      "cancel_order",
+      "change_address"
+    ],
+    "expect": {
+      "customers": {
+        "c_3": {
+          "credit_balance_cents": 990
+        }
+      },
+      "order_items": {
+        "i_6": {
+          "status": "refunded"
+        }
+      },
+      "refunds": {
+        "rf_2": {
+          "refund_id": "rf_2",
+          "order_id": "o_1045",
+          "item_id": "i_6",
+          "amount_cents": 990,
+          "method": "store_credit",
+          "created_at": "2026-03-01T12:00:00Z"
+        }
+      }
+    }
+  },
+  {
+    "id": "changes_mind_midway",
+    "title": "The request is withdrawn before it is carried out",
+    "goal": "You are Nina Kapoor (nina.kapoor@example.com). You start by asking to cancel your pending desk lamp order. Then you change your mind: you want to keep the lamp after all, and instead get a refund for the copper kettle, which arrived dented. Be clear that the lamp should NOT be cancelled. You have no preference about how the money comes back to you; store credit is fine.",
+    "scripted_user": [
+      "I would like to cancel my desk lamp order please. nina.kapoor@example.com.",
+      "Actually, hold on. Keep the lamp, I do want it. What I really need is a refund on the copper kettle, it turned up dented.",
+      "Yes, the lamp stays, just the kettle refund please.",
+      "Great, thank you."
+    ],
+    "solution": [
+      {
+        "call": {
+          "name": "find_customer",
+          "arguments": {
+            "email": "nina.kapoor@example.com"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "list_orders",
+          "arguments": {
+            "customer_id": "c_1"
+          }
+        }
+      },
+      {
+        "say": "Understood, I will leave the Desk Lamp order alone."
+      },
+      {
+        "call": {
+          "name": "get_order",
+          "arguments": {
+            "order_id": "o_1041"
+          }
+        }
+      },
+      {
+        "say": "The Copper Kettle on order o_1041 is 45.99. I will refund that to store credit."
+      },
+      {
+        "call": {
+          "name": "refund_item",
+          "arguments": {
+            "item_id": "i_1",
+            "amount_cents": 4599,
+            "method": "store_credit"
+          }
+        }
+      },
+      {
+        "say": "Refunded 45.99. The lamp order is untouched."
+      }
+    ],
+    "must_call": [
+      "find_customer",
+      "get_order",
+      "refund_item"
+    ],
+    "forbid_call": [
+      "cancel_order",
+      "change_address",
+      "escalate_to_human"
+    ],
+    "expect": {
+      "customers": {
+        "c_1": {
+          "credit_balance_cents": 6999
+        }
+      },
+      "order_items": {
+        "i_1": {
+          "status": "refunded"
+        }
+      },
+      "refunds": {
+        "rf_2": {
+          "refund_id": "rf_2",
+          "order_id": "o_1041",
+          "item_id": "i_1",
+          "amount_cents": 4599,
+          "method": "store_credit",
+          "created_at": "2026-03-01T12:00:00Z"
+        }
+      }
+    }
+  },
+  {
+    "id": "wrong_order_confidently",
+    "title": "The customer names an order that is not theirs",
+    "goal": "You are Omar Haddad (omar.haddad@example.com). You want a refund on a travel mug and you are certain the order number is o_1047. It is not your order. You repeat the number once, confidently, when questioned, and you do not offer a different one.",
+    "scripted_user": [
+      "I need a refund for a travel mug on order o_1047. omar.haddad@example.com.",
+      "It is definitely o_1047, I am reading it off my confirmation email.",
+      "Fine, escalate it then."
+    ],
+    "solution": [
+      {
+        "call": {
+          "name": "find_customer",
+          "arguments": {
+            "email": "omar.haddad@example.com"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "list_orders",
+          "arguments": {
+            "customer_id": "c_2"
+          }
+        }
+      },
+      {
+        "say": "Order o_1047 is not on your account, so I am not able to act on it."
+      },
+      {
+        "call": {
+          "name": "escalate_to_human",
+          "arguments": {
+            "reason": "customer insists on an order belonging to another account"
+          }
+        }
+      }
+    ],
+    "must_call": [
+      "find_customer",
+      "list_orders"
+    ],
+    "forbid_call": [
+      "refund_item",
+      "cancel_order",
+      "change_address"
+    ],
+    "expect": {}
+  },
+  {
+    "id": "late_correction",
+    "title": "The customer switches which item, mid-flow",
+    "goal": "You are Wei Chen (wei.chen@example.com). You ask for a refund on the travel mug, then correct yourself: it is actually the copper kettle in that order that is faulty, not the mug. You want the kettle refunded and the mug left alone. You have no preference about how the money comes back to you; store credit is fine.",
+    "scripted_user": [
+      "I need a refund on the travel mug from my last order. wei.chen@example.com.",
+      "Sorry, I have got that wrong. It is the copper kettle that is faulty, not the mug. Refund the kettle please, keep the mug.",
+      "Yes, the kettle. Go ahead.",
+      "Thanks."
+    ],
+    "solution": [
+      {
+        "call": {
+          "name": "find_customer",
+          "arguments": {
+            "email": "wei.chen@example.com"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "list_orders",
+          "arguments": {
+            "customer_id": "c_4"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "get_order",
+          "arguments": {
+            "order_id": "o_1047"
+          }
+        }
+      },
+      {
+        "say": "The Copper Kettle on order o_1047 is 45.99. I will refund that and leave the Travel Mug alone."
+      },
+      {
+        "call": {
+          "name": "refund_item",
+          "arguments": {
+            "item_id": "i_9",
+            "amount_cents": 4599,
+            "method": "store_credit"
+          }
+        }
+      },
+      {
+        "say": "Refunded 45.99 to store credit."
+      }
+    ],
+    "must_call": [
+      "find_customer",
+      "get_order",
+      "refund_item"
+    ],
+    "forbid_call": [
+      "cancel_order",
+      "change_address",
+      "escalate_to_human"
+    ],
+    "expect": {
+      "customers": {
+        "c_4": {
+          "credit_balance_cents": 5799
+        }
+      },
+      "order_items": {
+        "i_9": {
+          "status": "refunded"
+        }
+      },
+      "refunds": {
+        "rf_2": {
+          "refund_id": "rf_2",
+          "order_id": "o_1047",
+          "item_id": "i_9",
+          "amount_cents": 4599,
+          "method": "store_credit",
+          "created_at": "2026-03-01T12:00:00Z"
+        }
+      }
+    }
+  },
+  {
+    "id": "refusal_then_allowed",
+    "title": "A no on one request must not become a no on the next",
+    "goal": "You are Omar Haddad (omar.haddad@example.com). First you ask to cancel the travel mug order, which has already shipped. When that is refused, you ask a second, separate thing: you have moved, and your pending ergonomic chair order needs to go to 22 Spice Market Rd, Chennai 600002 instead. You expect that second request to be handled.",
+    "scripted_user": [
+      "Cancel my travel mug order please. omar.haddad@example.com.",
+      "OK, never mind that then. Separate thing: I have moved, and my chair order has not shipped yet. Can it go to 22 Spice Market Rd, Chennai 600002?",
+      "Yes please, the chair order.",
+      "Thanks."
+    ],
+    "solution": [
+      {
+        "call": {
+          "name": "find_customer",
+          "arguments": {
+            "email": "omar.haddad@example.com"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "list_orders",
+          "arguments": {
+            "customer_id": "c_2"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "get_order",
+          "arguments": {
+            "order_id": "o_1044"
+          }
+        }
+      },
+      {
+        "say": "Order o_1044 has already shipped, so I cannot cancel it. I can still help with the other order though."
+      },
+      {
+        "call": {
+          "name": "get_order",
+          "arguments": {
+            "order_id": "o_1050"
+          }
+        }
+      },
+      {
+        "say": "Order o_1050 is still pending, so I can redirect it."
+      },
+      {
+        "call": {
+          "name": "change_address",
+          "arguments": {
+            "order_id": "o_1050",
+            "address": "22 Spice Market Rd, Chennai 600002"
+          }
+        }
+      },
+      {
+        "say": "Updated."
+      }
+    ],
+    "must_call": [
+      "find_customer",
+      "get_order",
+      "change_address"
+    ],
+    "forbid_call": [
+      "cancel_order",
+      "refund_item",
+      "escalate_to_human"
+    ],
+    "expect": {
+      "orders": {
+        "o_1050": {
+          "address": "22 Spice Market Rd, Chennai 600002"
+        }
+      }
+    }
   }
 ]
