@@ -264,7 +264,8 @@ hardcodes retail.
 
 ## What this does not measure
 
-The closing turn ended up doing more than it was built for. Across this run's
+The closing turn ended up doing more than it was built for, and fixing that is
+what the current run is measuring. Across this run's
 banked trials, 29 of 37 state-changing calls happened after the simulated
 customer had left, and in 24 trials every write did. All 24 passed, and without
 the closing turn all 24 would have failed with an unchanged world. That says
@@ -275,8 +276,11 @@ vanish the moment an agent says "I am going to refund this". The closing turn
 is compensating for an over-eager stop condition rather than modelling
 anything. It is applied uniformly and it is generous to the agent, so the
 number holds, but most successful writes here happened after the customer had
-gone. Teaching the simulator to stop only on a completed action or a final
-refusal is the next measurement's job.
+gone. The simulator now stops only on a completed action or a
+final refusal, never on a stated intention, and the run reported below is the
+first measured that way. Runs carry a harness version and the checkpoint
+refuses to mix them, because trials measured either side of a change like this
+are two measurements wearing one number.
 
 Nothing in the grader requires the agent to speak. Three tasks can be passed in
 total silence, `status_question` among them, and answering a question is that

@@ -40,6 +40,16 @@ Practical notes:
 - One customer, one conversation. When you are finished, say so plainly.
 """
 
+#: Bumped whenever anything the agent can perceive or react to changes: the
+#: system prompt, the tool set, the loop, or how the simulated customer decides
+#: to stop. Trials from two versions are two measurements, and the checkpoint
+#: refuses to mix them rather than leaving it to whoever remembers.
+#:
+#: 1  first harness
+#: 2  the agent gets a closing turn when the customer leaves
+#: 3  the customer no longer treats a stated intention as completion
+HARNESS_VERSION = 3
+
 #: Model calls, not conversational turns. A refund is comfortably done in six;
 #: past a dozen the agent is looping, and letting it loop is how a free tier
 #: gets spent on one task.

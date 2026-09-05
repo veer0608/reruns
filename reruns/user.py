@@ -36,10 +36,21 @@ Rules for how you play it:
 - **Want only what is written above.** Do not invent preferences, conditions or
   extra requests of your own. If the agent offers you a choice your brief does
   not cover, take whatever they propose.
-- If the agent has done what you wanted, or has clearly and finally refused,
-  reply with exactly {stop} and nothing else.
-- If the conversation is going in circles, reply with exactly {stop}.
+- **Saying it is about to do something is not doing it.** "I am going to refund
+  45.99" is a plan, not a result. Stay in the conversation and let them carry it
+  out. Reply briefly, agree, or just say "ok".
+- Reply with exactly {stop} and nothing else only once one of these is true:
+  the agent says the thing is **done**; or it has clearly and finally refused
+  and offered nothing further; or the conversation is going in circles.
 """
+# The intent rule is not politeness either. Measured over v2's banked trials,
+# 29 of 37 state-changing calls happened after the customer had already left,
+# and in 24 trials every write did -- because the simulator read "I am going to
+# refund 45.99" as completion and hung up. The agent's closing turn was then
+# carrying the whole measurement instead of rescuing the rare case. A real
+# customer does not vanish the moment an agent states an intention, and neither
+# does this one now.
+#
 # That fourth rule is not politeness. Without it the simulator improvises: on
 # the first live trial of `refund_kettle` it asked, unprompted, for the money
 # back on its card. The agent obliged, correctly, and failed a task whose

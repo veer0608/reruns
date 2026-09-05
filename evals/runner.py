@@ -38,7 +38,7 @@ from reruns.grade import Verdict, grade
 from reruns.llm import build_client
 from reruns.tools import Toolbox, Trace
 
-from .checkpoint import Checkpoint
+from .checkpoint import Checkpoint, MixedHarness
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -365,13 +365,18 @@ def main(argv: list[str] | None = None) -> int:
                   "Try --solvers oracle,mute.")
             return 2
 
-    checkpoint = Checkpoint.load(args.checkpoint)
+    try:
+        checkpoint = Checkpoint.load(args.checkpoint)
+    except MixedHarness as exc:
+        print(exc)
+        return 2
     checkpoint.meta = {
         "domain": domain.name,
         "k": args.k,
         "model": getattr(client, "model", None),
         "scripted_user": bool(args.scripted_user),
         "final_turn": not args.no_final_turn,
+        "harness": agent.HARNESS_VERSION,
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
@@ -420,7 +425,11 @@ def _dry_run(domain: Domain, tasks, args) -> int:
     Finding out that it did not, by watching a day's allowance go on trials
     that were already paid for, is an expensive way to learn it.
     """
-    checkpoint = Checkpoint.load(args.checkpoint)
+    try:
+        checkpoint = Checkpoint.load(args.checkpoint)
+    except MixedHarness as exc:
+        print(exc)
+        return 2
     todo, cached = [], []
     for task in tasks:
         for trial in range(1, args.k + 1):

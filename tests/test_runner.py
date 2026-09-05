@@ -328,3 +328,45 @@ def test_strict_rule_7_is_a_regrade_reading_not_a_default(domain, tmp_path, caps
     strict = [runner_regrade(D.load(), Verdict.from_dict(v), True).as_dict() for v in plain]
     assert [v["violations"] for v in plain] == [v["violations"] for v in strict], \
         "the oracle announces and waits, so neither reading should fault it"
+
+
+def test_a_checkpoint_from_another_harness_is_refused(tmp_path, capsys):
+    """The guard that replaces remembering.
+
+    The closing turn, the escalation rule and the customer's stop condition
+    each changed what the agent experiences, and each time the only thing
+    between a corrupted measurement and a clean one was somebody noticing.
+    """
+    from reruns.agent import HARNESS_VERSION
+
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({
+        "meta": {"harness": HARNESS_VERSION - 1},
+        "verdicts": [verdict("a", 1, True).as_dict()],
+    }), encoding="utf-8")
+
+    assert main(["--dry-run", "--k", "1", "--checkpoint", str(path)]) == 2
+    printed = capsys.readouterr().out
+    assert "two measurements" in printed
+    assert f"harness {HARNESS_VERSION - 1}" in printed
+
+
+def test_a_checkpoint_with_no_marker_is_treated_as_older(tmp_path, capsys):
+    """Unknown must not mean compatible. A file without the marker predates it,
+    and reading unknown as safe is the one reading that lets trials from two
+    harnesses into one number."""
+    path = tmp_path / "unmarked.json"
+    path.write_text(json.dumps({
+        "meta": {"k": 5},
+        "verdicts": [verdict("a", 1, True).as_dict()],
+    }), encoding="utf-8")
+
+    assert main(["--dry-run", "--k", "1", "--checkpoint", str(path)]) == 2
+    assert "older than" in capsys.readouterr().out
+
+
+def test_a_checkpoint_this_harness_wrote_is_accepted(domain, tmp_path, capsys):
+    path = tmp_path / "current.json"
+    Checkpoint.load(path).add(verdict("refund_kettle", 1, True))
+    assert main(["--dry-run", "--k", "1", "--checkpoint", str(path)]) == 0
+    assert "1 trials already banked" in capsys.readouterr().out

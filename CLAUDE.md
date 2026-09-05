@@ -192,6 +192,25 @@ The check requires a customer turn *later* in the transcript, because
 "announced and acted in one message" and "announced, and the customer left
 before replying" look identical in a trace and only the first is a fault.
 
+## Harness versions, and the guard that enforces them
+
+`agent.HARNESS_VERSION` is bumped whenever anything the agent can perceive or
+react to changes: the system prompt, the tool set, the loop, or how the
+simulated customer decides to stop.
+
+    1  first harness
+    2  the agent gets a closing turn when the customer leaves
+    3  the customer no longer treats a stated intention as completion
+
+`Checkpoint.load` refuses a checkpoint whose marker is not the running version,
+and treats a **missing** marker as older rather than compatible: an existing
+file without one predates the marker by definition, and reading unknown as safe
+is the single reading that lets two harnesses into one number.
+
+This exists because the hazard has come up three times in two days and each
+time the only thing preventing a corrupted measurement was somebody
+remembering. `runs/v2.json` is now correctly refused.
+
 ## The closing turn is carrying the measurement, not rescuing it
 
 Measured over v2's 57 banked trials:
@@ -245,7 +264,18 @@ expectations that can see whether it did. `test_three_tasks_can_be_passed_in_
 total_silence` pins the current behaviour so the hole stays visible and the day
 someone closes it is a day the tests announce.
 
-## v1 was abandoned on purpose
+## v1 and v2 were both abandoned on purpose
+
+v2 reached 57 of 75 trials on harness 2 and stops there. Fixing the customer's
+stop condition was the third change to what the agent experiences, and trials
+measured either side of it are two measurements. **v3** is a fresh 75 trials on
+harness 3, in `runs/v3.json`. Do not resume it from `runs/v2.json`; the guard
+above will refuse, which is the point.
+
+v2 was not wasted. Auditing its passes rather than only its failures produced
+the three findings above: rule 7's letter against its sentence, three tasks
+passable in silence, and the closing turn carrying 24 of the run's successes.
+The last of those is why harness 3 exists.
 
 The first run reached 60 of 75 trials and was never published as a score. It
 was measured before escalation became optional and before the closing turn

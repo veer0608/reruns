@@ -14,7 +14,19 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from reruns.agent import HARNESS_VERSION
 from reruns.grade import Verdict
+
+
+class MixedHarness(RuntimeError):
+    """A checkpoint measured under a different harness than the one running.
+
+    Resuming it would put trials from two behaviours into one number. This has
+    nearly happened three times by hand: the closing turn, the escalation rule,
+    and the customer's stop condition each changed what the agent experiences,
+    and each time the only thing standing between a corrupted measurement and a
+    clean one was somebody remembering. This is that somebody.
+    """
 
 
 @dataclass
@@ -31,6 +43,19 @@ class Checkpoint:
         if not target.is_file():
             return cls(path=target)
         raw = json.loads(target.read_text(encoding="utf-8"))
+        # An existing file with no marker predates the marker, so it is an
+        # older harness by definition. Treating unknown as compatible is the
+        # one reading that lets the corruption through, and this file is the
+        # only thing standing in its way.
+        was = raw.get("meta", {}).get("harness")
+        if was != HARNESS_VERSION:
+            raise MixedHarness(
+                f"{target} was measured on harness "
+                f"{was if was is not None else 'unknown, so older than 3'}, and "
+                f"this is harness {HARNESS_VERSION}. Those are two "
+                f"measurements. Start a fresh checkpoint rather than resuming "
+                f"this one."
+            )
         verdicts = {}
         for entry in raw.get("verdicts", []):
             verdict = Verdict.from_dict(entry)
@@ -58,7 +83,7 @@ class Checkpoint:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "meta": self.meta,
+            "meta": {**self.meta, "harness": HARNESS_VERSION},
             "verdicts": [v.as_dict() for v in self.verdicts.values()],
         }
         # Written whole and moved into place. A run killed mid-write would
