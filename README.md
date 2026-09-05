@@ -264,6 +264,20 @@ hardcodes retail.
 
 ## What this does not measure
 
+The closing turn ended up doing more than it was built for. Across this run's
+banked trials, 29 of 37 state-changing calls happened after the simulated
+customer had left, and in 24 trials every write did. All 24 passed, and without
+the closing turn all 24 would have failed with an unchanged world. That says
+the truncation was pervasive rather than rare, and it says something less
+comfortable too: the customer simulator stops on an announcement of intent,
+because an announcement reads as completion, and a real customer does not
+vanish the moment an agent says "I am going to refund this". The closing turn
+is compensating for an over-eager stop condition rather than modelling
+anything. It is applied uniformly and it is generous to the agent, so the
+number holds, but most successful writes here happened after the customer had
+gone. Teaching the simulator to stop only on a completed action or a final
+refusal is the next measurement's job.
+
 Nothing in the grader requires the agent to speak. Three tasks can be passed in
 total silence, `status_question` among them, and answering a question is that
 task's whole purpose. In this run all five `unknown_email` trials passed with

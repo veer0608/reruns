@@ -192,6 +192,35 @@ The check requires a customer turn *later* in the transcript, because
 "announced and acted in one message" and "announced, and the customer left
 before replying" look identical in a trace and only the first is a fault.
 
+## The closing turn is carrying the measurement, not rescuing it
+
+Measured over v2's 57 banked trials:
+
+- 29 of 37 state-changing calls happen **after the simulated customer has left**
+- in 24 trials **every** write happens on the closing turn, and all 24 passed
+
+So the closing turn is not the rare rescue it was built as. It is the normal
+path. Without it those 24 trials would all have failed with an unchanged world,
+which is 24 more pieces of evidence that the truncation was pervasive rather
+than the two-trial curiosity it looked like in v1.
+
+That vindicates the fix and exposes the real problem one level up: **the
+customer simulator stops too eagerly.** It ends the conversation on the agent
+announcing an intention, because an announcement reads as completion. A real
+customer does not vanish the instant an agent says "I am going to refund this."
+So the closing turn is compensating for an over-eager stop condition rather
+than modelling anything.
+
+The number stays defensible, because the compensation is generous to the agent
+and applied uniformly. But it has to be stated: most successful writes in this
+run happened after the customer had gone.
+
+**v3 fix, and it is in `user.py` not `agent.py`:** teach the simulator to stop
+only on a completed action or a final refusal, never on a stated intention.
+Then conversations run to their natural end and the closing turn goes back to
+being the rare rescue. That changes agent behaviour, so it cannot happen mid
+measurement.
+
 ## Three tasks can be passed in silence
 
 Nothing in the grader requires the agent to say anything to the customer. An
