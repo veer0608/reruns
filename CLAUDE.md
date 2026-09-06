@@ -87,14 +87,14 @@ the user environment instead, so a second copy of a live key is not sitting
 inside a project directory. `llm.py`'s `load_dotenv` uses `setdefault`, so an
 environment variable wins and a `.env` is simply never found.
 
-Check before a run that would otherwise waste a day:
+A variable set at User scope reaches only processes started afterwards, so a
+long-running app will not see one set after it launched. Do not rely on
+restarting to fix that: read it out of the registry instead, chained into the
+same invocation as the run, or the assignment dies with the shell.
 
 ```powershell
-if ($env:GEMINI_API_KEY) { "key present" } else { "NO KEY" }
+if (-not $env:GEMINI_API_KEY) { $env:GEMINI_API_KEY = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY','User') }; if ($env:GEMINI_API_KEY) { "key present" } else { "NO KEY" }
 ```
-
-A variable set at User scope reaches only processes started afterwards, so an
-app that was already open when it was set will not see it until it restarts.
 
 `llm.py` is lifted from schemablind on purpose; fixes worth having belong in
 both.
@@ -180,7 +180,7 @@ default and must stay off during a measurement** -- a run graded half one way
 and half the other is two runs. Apply it to a finished run:
 
 ```bash
-python -m evals.runner --regrade runs/v2.json --k 5 --strict-rule-7
+python -m evals.runner --regrade runs/v3.json --k 5 --strict-rule-7
 ```
 
 On v2's first 57 trials it fires on exactly the three failing
