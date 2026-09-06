@@ -112,6 +112,30 @@ If a run shows tasks failing on a field the customer could have opinions about,
 read the transcript in the run JSON before touching the agent. It is more often
 the brief than the model.
 
+## The customer misremembers its own conversation
+
+Seen in v3's `refund_original_payment` failures, and in v2's before them. After
+the agent refunds to store credit, the customer objects with "Wait, I SAID I
+did not want store credit" and "I SPECIFICALLY said I do not want store
+credit". It said no such thing. Its only prior message was that the mug leaks
+and it would like a refund.
+
+The simulator is inventing a prior statement to justify an objection its brief
+entitles it to make. That is a smaller cousin of the requirement-inventing bug
+that `USER_SYSTEM` already guards against: the brief is being honoured, the
+transcript is not.
+
+**Harmless in this suite, and not fixed.** Grading is on final state, the agent
+had already acted before the false claim was made, and no rule reads customer
+text any more since rule 9 moved to `asks_for_card`. It would stop being
+harmless the moment a task graded on what the customer actually said, or a
+policy rule read the transcript again.
+
+If it needs fixing later, it is one line in `USER_SYSTEM`, alongside the rule
+about not inventing preferences: do not claim to have said things you did not
+say. Like every other simulator change, it alters agent behaviour and so
+belongs at the start of a measurement rather than the middle of one.
+
 ## Escalation is asked for, not required
 
 Rule 12 of `policy.md` still tells the agent to escalate with
