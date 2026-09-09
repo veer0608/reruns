@@ -126,88 +126,155 @@ produced them, because it changes what the number means.
 
 ## Current status
 
-**No score yet.** The first run reached 60 of 75 trials before the day's token
-allowance ran out, and it was then abandoned rather than finished. It was
-measured under two grading decisions that have since changed, so its headline
-would have arrived carrying more caveats than signal. The measurement in
-progress is a fresh 75 trials on the current harness.
-
-That abandoned run was not wasted. It produced five defects, every one of which
-would have made a published number wrong:
-
-- **Rule 9 was scoring the harness, not the model.** Whether the customer had
-  asked to be refunded to their card was matched with a regex over generated
-  prose. The simulator said "I don't want store credit. I want it back on the
-  card I paid with", which matched none of the patterns, and three trials where
-  the agent did exactly the right thing were logged as policy violations. What
-  the customer wants is a property of the scenario, so it is now declared in
-  the task and read from there.
-- **Requiring `escalate_to_human` was the wrong bar.** Six of eleven failures
-  were agents that refused correctly, explained the rule accurately, offered a
-  sensible alternative, and never reached for the tool. Refusal tasks now
-  require the lookup instead.
-- **The customer could hang up mid-action.** The simulator stops on what the
-  agent says, so an agent announcing "I am going to refund 45.99" lost the turn
-  it would have acted on. Two trials ended one call short of a pass. The agent
-  now gets a closing turn.
-- **A trial killed by the token cap was cached as a failure**, so a resume
-  would have counted a trial that never ran as one the agent got wrong.
-- **`--out` pointed at the `--checkpoint` path overwrote it**, which is how 60
-  finished trials nearly had to be bought twice.
-
-All five are fixed and held by tests. Four of them were only visible because
-every trial keeps its transcript, and three were re-scored offline with
-`--regrade` for nothing.
-
-The scaffolding that produces a number is complete, tested, and honest about
-running out:
+**v3: 100 trials, 20 tasks, harness 3, `gemini-flash-lite-latest`.**
 
 ```
-oracle  15 tasks x 1 trials          mute  15 tasks x 1 trials
+pass@1     0.78
+pass^5     0.70   (14 of 20 tasks passed all 5 trials)
+```
+
+State-and-calls (final state plus required/forbidden tools, policy set aside)
+also lands at 0.78. Every trial that violated a policy rule in this run also
+failed on state or calls, so there is no trial here that did right by the
+customer's data while still breaking a rule. That is a property of these three
+violations, not a guarantee the two numbers will keep matching in a future run.
+
+Escalation is asked for by policy rule 12 and not required by the grader; a
+considered refusal in words scores as a pass here, same as it has since the
+first run.
+
+Policy violations, the shipped reading of rule 7:
+
+```
+3 of 100 trials violated a rule
+  rule 7  amount_stated_first   2
+  rule 1  own_orders_only       2
+```
+
+(one trial broke both.) The strict reading of rule 7, the customer has to see
+the amount in a message that does not also carry the tool call, costs nothing
+to check against the same transcripts:
+
+```bash
+python -m evals.runner --regrade runs/v3.json --k 5 --strict-rule-7
+```
+
+```
+9 of 100 trials violated a rule, strict
+  rule 7  amount_seen_before_final   6
+  rule 7  amount_stated_first        2
+  rule 1  own_orders_only            2
+```
+
+Unlike v2, where the strict reading turned three passing trials into failures
+and named the exact mechanism, every trial it adds here (three
+`refund_original_payment`, three `late_correction`) was already failing on
+state. It confirms the mechanism rather than uncovering a hidden gap this
+time. The headline above uses the shipped reading; the strict verdicts are not
+written back into `runs/v3.json`.
+
+Trials passed out of 5, by task:
+
+```
+address_change_pending          5/5
+address_change_shipped_refuse   5/5
+ambiguous_order                 5/5
+big_refund_escalate             5/5
+cancel_and_refund                5/5
+cancel_pending_lamp              5/5
+cancel_shipped_refuse            5/5
+double_refund_refuse             5/5
+refund_cable_only                5/5
+refund_kettle                    5/5
+refund_out_of_window             5/5
+refusal_then_allowed             5/5
+status_question                  5/5
+unknown_email                    5/5
+wrong_order_confidently          2/5
+refund_original_payment          2/5
+late_correction                  2/5
+claimed_price                    1/5
+mixed_refund_split               1/5
+changes_mind_midway              0/5
+```
+
+One known hole this run does not close: nothing in the grader requires the
+agent to speak, and `status_question`, `unknown_email` and
+`cancel_shipped_refuse` can all be passed in total silence. Their transcripts
+were checked before trusting the 5/5s above; the lookups and required tool
+calls are genuinely present, not empty runs coasting on a lenient grader.
+
+Fourteen tasks never lost a trial. The six that did are the whole story:
+
+- **changes_mind_midway (0/5).** The agent cancels the pending order on the
+  customer's first, one-line message, then correctly refuses to un-cancel it
+  and correctly refunds the item raised in the follow-up. It gets the
+  follow-up right in every trial and fails anyway, because `cancel_order` is
+  irreversible and nothing in the task, the policy, or the grading asks the
+  agent to wait a beat before acting on a terse first message. There is no
+  hesitation to reward here yet; the agent is fast, and fast is wrong on this
+  one.
+- **claimed_price (1/5).** The customer insists the $45.99 kettle cost $99.00.
+  The task wants the recorded price held and a $45.99 refund issued. In 4 of 5
+  trials the agent escalates the price dispute to a human instead and never
+  calls `refund_item`. Treating a contradicted customer as grounds to escalate,
+  rather than a fact to restate and act on, is the failure.
+- **mixed_refund_split (1/5).** One item is refundable outright ($9.90), the
+  other is over the escalation threshold ($249.00). In 4 of 5 trials the agent
+  escalates the whole request instead of refunding the cheap item and
+  escalating only the expensive one; `refund_item` is never called.
+- **late_correction (2/5).** The customer names the wrong item, the agent
+  refunds it, then the customer corrects themselves mid-flow. In 3 of 5 trials
+  the agent refunds the corrected item on top of the first one instead of
+  treating the correction as a replacement, paying out twice.
+- **refund_original_payment (2/5).** The case documented in CLAUDE.md: the
+  agent defaults to store credit unasked, and when the customer objects after
+  the money has moved, it escalates instead of correcting the refund method
+  itself.
+- **wrong_order_confidently (2/5).** The customer states an order id
+  confidently; it belongs to someone else. In 3 of 5 trials the agent skips
+  `list_orders` and refunds the item anyway, which is also this run's only
+  rule 1 (`own_orders_only`) violation.
+
+Tokens: 1,303,711 prompt + 26,373 completion = 1,330,084 across 100 trials,
+13,301 per trial on average. No pricing is configured for
+`gemini-flash-lite-latest`, so nothing here is priced.
+
+v1 (60 of 75 trials) and v2 (57 of 75) were both abandoned rather than
+finished; they ran on earlier harnesses, and their five harness defects and
+three grading gaps are what v3's harness and grading are built to have already
+fixed. Their files and the full account of what they found stay in `runs/` and
+`CLAUDE.md`.
+
+The scaffolding that produces a number is checked on every push, without a
+key:
+
+```
+oracle  20 tasks x 1 trials          mute  20 tasks x 1 trials
   pass@1            1.000              pass@1            0.000
   state and calls   1.000              state and calls   0.000
   policy violated   0.000              policy violated   0.000
 ```
 
-Those two are fixtures, not results. `oracle` replays each task's recorded
-solution and must score 1.000; `mute` acknowledges the customer and touches
-nothing and must score 0.000. An inverted comparison, a state diff that passes
-everything, an expectation written against a column that no longer exists:
-each of those produces a plausible percentage, and each moves one of these two
-numbers off its fixed point. CI asserts both on every push, without a key.
+`oracle` replays each task's recorded solution and must score 1.000; `mute`
+acknowledges the customer and touches nothing and must score 0.000. Either
+number moving off its fixed point means the scorer is broken, independent of
+what any model does.
 
-A run that hits a daily token cap is **abandoned and gets no score**. Trials
-that never ran cannot be told apart from trials that failed, so the summary
-refuses to print a percentage and says how far it got. The checkpoint is per
-trial, so tomorrow's run resumes rather than re-paying for eleven finished
-tasks. Every trial keeps its whole transcript in the run file, because a
-failing trial you cannot read is one nobody can act on, and re-running it to
-find out what happened costs a second budget.
-
-Those transcripts also make grading fixes free. `--regrade` replays a saved
-trial's calls into a fresh world and scores it again without touching a model,
-so when a rule turns out to be wrong the finished trials are re-scored from
-disk rather than re-bought.
+A run that hits a daily token cap is abandoned and gets no score: trials that
+never ran cannot be told apart from trials that failed, so the summary refuses
+to print a percentage and says how far it got instead. `--dry-run` shows the
+same thing before spending anything:
 
 ```bash
-python -m evals.runner --regrade runs/first.json --k 5 --out runs/first-regraded.json
+python -m evals.runner --dry-run --k 5 --checkpoint runs/v3.json
 ```
 
-And `--dry-run` says what a run would execute, and what it would cost, before
-it costs it:
+Grading fixes are free against banked transcripts, which is how the strict
+rule 7 reading above was checked without touching a model:
 
-```
-checkpoint: runs/first-checkpoint.json
-  58 trials already banked, 17 to run
-
-  refund_out_of_window           trials 5
-  ambiguous_order                trials 5
-  claimed_price                  trials 1,2,3,4,5
-  status_question                trials 1,2,3,4,5
-  big_refund_escalate            trials 1,2,3,4,5
-
-  banked trials cost 640,083 tokens, 11,036 each
-  so 17 more is roughly 187,611 tokens
+```bash
+python -m evals.runner --regrade runs/v3.json --k 5 --out runs/v3-regraded.json
 ```
 
 ## Running it
