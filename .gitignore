@@ -9,4 +9,7 @@ venv/
 .env
 runs/*.json
 runs/voice-cache/
+runs/*.log
+runs/*.err
 !runs/.gitkeep
+site/voice.html

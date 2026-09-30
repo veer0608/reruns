@@ -391,10 +391,14 @@ binding budget, exactly as for a text run.
 - **Oracle and mute never go down the line.** They are fixtures, and `--check`
   stays free and offline.
 - **Every transcript is cached** in `runs/voice-cache/`, keyed on line
-  descriptor, seed and text. The seed is (task, trial, turn). On a quiet line
-  the audio is deterministic, so a scripted opening is transcribed the same way
-  on all five trials: the corruption of an opening line is a fixed condition of
-  that task, and pass^5 asks whether the agent reliably recovers from it.
+  descriptor, seed and text. The seed is (task, trial, turn), so a resume or a
+  re-run of the same trial reads its transcript back rather than buying a new
+  one. **Across trials the transcript varies even on a quiet line**, although
+  the local processing is deterministic: in the first voice run
+  `cancel_pending_lamp`'s identical opening came back as "neena.kapoor" on
+  trials 1-2 and "nina.kapoor" on 3-5. Either edge-tts or Groq's Whisper at
+  temperature 0 is not bit-stable. That is closer to real calls than a fixed
+  corruption would be, and it is why the cache is keyed per trial.
 
 ### Addresses are graded as places
 
@@ -434,3 +438,66 @@ endpoint echoes the requested name, so the alias target cannot be read from a
 response. Voice runs pin `gemini-3.5-flash-lite`. A clean text-versus-voice gap
 needs a text control on the same pinned id; without one, say that the text
 side is v3 on an alias.
+
+**This is not hypothetical.** In the first 34 voice trials `refund_cable_only`
+went 0 of 5 on rule 7 (refunded, then announced the amount) against 5 of 5 in
+v3, and its transcripts show the email surviving the line intact. Nothing about
+that failure is the phone line. The pinned model simply acts before speaking,
+so a voice-versus-v3 table would book a model difference as voice damage.
+Attribute every failure from its transcript: a lost or corrupted entity that the
+agent then acted on is the line; anything else is the model until a text
+control on the same id says otherwise.
+
+### Measurement in progress (started 2026-09-30)
+
+Two runs, in this order, both on `gemini-3.5-flash-lite`, both `--k 5`, each
+with its own checkpoint. Re-running a command resumes it; `--dry-run` first.
+
+1. **voice** -- `runs/voice.json`, out `runs/voice-report.json`, logs
+   `runs/voice-run*.log`. 34 of 100 banked when first interrupted.
+2. **text control** -- `runs/text-control.json`, out
+   `runs/text-control-report.json`. Starts only once voice is 100 of 100.
+   Same flags minus `--voice`. Its checkpoint is refused for voice and vice
+   versa, so the two cannot mix.
+
+```powershell
+if (-not $env:GEMINI_API_KEY) { $env:GEMINI_API_KEY = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY','User') }; $env:PYTHONIOENCODING='utf-8'; .\.venv\Scripts\python -m evals.runner --solvers model --provider gemini --model gemini-3.5-flash-lite --k 5 --checkpoint runs/text-control.json --out runs/text-control-report.json
+```
+
+The published comparison is voice against this control, never against v3.
+Gemini's cap is 500 requests per day per model and resets at 12:30 IST; each
+run is roughly two days.
+
+Resumed automatically by a Windows Task Scheduler job, `reruns-daily-resume`,
+daily at 12:46 IST, running `~/claude/tools/reruns-daily-resume.ps1` (outside
+this repo, because it reads a key path specific to this machine). It logs each
+decision to `runs/scheduler.log`, starts nothing while any `evals.runner` is
+alive, runs the next unfinished run in the foreground until the cap, and
+disables itself when both runs are 100 of 100. Check it with
+`Get-ScheduledTaskInfo -TaskName reruns-daily-resume`.
+
+When both are 100 of 100, the comparison is one command. It refuses runs on
+different models and prints no score while either run is incomplete:
+
+```bash
+python -m evals.compare runs/voice-report.json runs/text-control-report.json
+```
+
+It splits voice failures into "exposed" (an email or order id the customer said
+did not survive the recogniser in that trial) and "clean line". Exposure is not
+blame, but a clean-line failure cannot be the line's. On the first 65 banked
+voice trials the only clean-line failures were `refund_cable_only`'s five,
+the pinned model's rule 7 habit.
+
+## The listening page (`site/`, published from `docs/`)
+
+`site/build_voice_page.py` renders five curated voice trials from
+`runs/voice.json` into `docs/voice.html` (GitHub Pages, main:/docs, live at
+veer0608.github.io/reruns/voice.html) and `site/voice.html` (the claude.ai
+artifact copy, gitignored). Audio is regenerated through the same line and
+embedded as data URIs, so the page is one self-contained file.
+
+`CARDS` holds a written note per trial. The builder refuses to write a page
+whose note no longer matches that trial's verdict, and the finding table is
+computed from the transcripts, so rebuilding after the measurement finishes is
+safe: rerun it, check the table, commit `docs/`.

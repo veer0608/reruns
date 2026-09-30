@@ -317,6 +317,13 @@ failed, and the agent escalated to a human without asking the customer to
 repeat it. Over text that is the right move, because an email that is not on
 file really is wrong. Over a phone line it hands a solvable call to a person.
 
+**[Listen to five of these trials](https://veer0608.github.io/reruns/voice.html)**:
+the caller as the recogniser heard them, what was said against what was heard,
+and what the agent did next. On the trials banked so far, an email that was
+dropped entirely usually got asked for again, and an email that was misheard
+never once led to a pass: the agent trusted it, the lookup failed, and it handed
+the call to a human.
+
 `--voice-aware` is the second arm: the same agent, told that it is on a call and
 reading a transcript, and asked to read back emails, order numbers and
 addresses before acting on them. The headline voice number is measured without

@@ -1,0 +1,235 @@
+<title>What the Agent Heard</title>
+<meta name="description" content="Support-agent trials heard down a simulated phone line: the caller's audio, Whisper's transcript, and what the agent did with it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a QA reviewer's call sheet. One reading column; each call record is a
+   log of the conversation, with the caller's waveform as the handle to hear it. */
+:root {
+  --paper: #f2f4f3;
+  --raised: #ffffff;
+  --ink: #152120;
+  --muted: #5a6a67;
+  --rule: #d3dbd9;
+  --signal: #0b6e6e;
+  --signal-soft: #c9dedd;
+  --heard-bg: #fbe6c2;
+  --heard-ink: #7d430a;
+  --lost: #a8322b;
+  --pass: #2e7a3d;
+  --fail: #b3261e;
+  --display: "Archivo", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1615; --raised: #152120; --ink: #e3ebe9; --muted: #93a4a0; --rule: #26332f;
+    --signal: #4fc2bf; --signal-soft: #1f3b3a; --heard-bg: #4a3212; --heard-ink: #f5c27a;
+    --lost: #f08a80; --pass: #6ccb7e; --fail: #f2877e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1615; --raised: #152120; --ink: #e3ebe9; --muted: #93a4a0; --rule: #26332f;
+  --signal: #4fc2bf; --signal-soft: #1f3b3a; --heard-bg: #4a3212; --heard-ink: #f5c27a;
+  --lost: #f08a80; --pass: #6ccb7e; --fail: #f2877e; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 400 1rem/1.6 var(--body);
+  margin: 0;
+  padding: 0 16px;
+}
+.sheet { max-width: 46rem; margin: 0 auto; padding-block: 3rem 4rem; display: grid; gap: 3.5rem; }
+a { color: var(--signal); text-underline-offset: 0.18em; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--display); font-stretch: 72%; text-wrap: balance; margin: 0; line-height: 1.05; }
+h2 { font-size: 1.9rem; font-weight: 750; letter-spacing: -0.005em; }
+p { margin: 0; }
+section { display: grid; gap: 1.1rem; }
+.lede { color: var(--muted); max-width: 62ch; }
+.tag {
+  font: 500 0.68rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin-right: 0.6rem;
+}
+q { quotes: "\201C" "\201D"; font-family: var(--mono); font-size: 0.92em; }
+
+/* masthead */
+.mast { display: grid; gap: 1.2rem; }
+.eyebrow { font: 500 0.78rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--signal); }
+h1 { font-size: clamp(2.8rem, 9vw, 4.6rem); font-weight: 800; letter-spacing: -0.01em; }
+.spec {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 0; align-items: center;
+  font: 400 0.8rem/1.4 var(--mono); color: var(--ink);
+  border-block: 1px solid var(--rule); padding-block: 0.8rem;
+}
+.spec span { padding: 0.2rem 0.55rem; border-radius: 3px; background: var(--raised); border: 1px solid var(--rule); }
+.spec i { font-style: normal; color: var(--muted); padding: 0 0.45rem; }
+.spec .ag { background: var(--signal-soft); border-color: transparent; }
+
+/* finding */
+.finding h2 { font-size: clamp(1.9rem, 5vw, 2.5rem); }
+.finding h2 em { font-style: normal; color: var(--signal); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 0.7rem 0.6rem; border-bottom: 1px solid var(--rule); }
+thead th { font: 500 0.68rem/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+tbody th { font-weight: 600; }
+tbody th span { display: block; font-weight: 400; font-size: 0.85rem; color: var(--muted); }
+td { font: 500 1.15rem/1 var(--mono); }
+td:last-child { color: var(--fail); }
+.small { font-size: 0.88rem; color: var(--muted); max-width: 62ch; }
+
+/* call records */
+.records { display: grid; gap: 1.6rem; }
+.record {
+  background: var(--raised); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 1.4rem 1.4rem 1.2rem; display: grid; gap: 1rem; min-width: 0;
+}
+.record header { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 1rem; align-items: start; }
+.record .meta { grid-column: 1 / -1; display: flex; gap: 0.8rem; font: 400 0.75rem/1 var(--mono); color: var(--muted); }
+.record .task { color: var(--ink); }
+.record h3 { font-size: 1.5rem; font-weight: 720; }
+.stamp {
+  font: 600 0.72rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 0.4rem 0.55rem; border: 1.5px solid currentColor; border-radius: 3px; transform: rotate(-2deg);
+}
+.stamp.pass { color: var(--pass); }
+.stamp.fail { color: var(--fail); }
+.note { max-width: 62ch; }
+.aside, .why { font-size: 0.88rem; color: var(--muted); font-family: var(--mono); overflow-wrap: anywhere; }
+
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+.log li { min-width: 0; }
+.caller { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.9rem; align-items: start; }
+.lines { display: grid; gap: 0.3rem; min-width: 0; font: 400 0.86rem/1.55 var(--mono); overflow-wrap: anywhere; }
+.said { color: var(--muted); }
+.heard { color: var(--ink); }
+.swap del, .lost del { color: var(--lost); text-decoration-thickness: 1.5px; }
+.swap ins { text-decoration: none; background: var(--heard-bg); color: var(--heard-ink); padding: 0 0.2rem; border-radius: 2px; margin-left: 0.25rem; }
+.lost em { font-style: normal; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--lost); margin-left: 0.35rem; }
+
+.play {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 0.25rem 0.5rem; align-items: center;
+  width: 100%; padding: 0.55rem 0.6rem; cursor: pointer; text-align: left;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 5px; color: var(--ink);
+  --p: 0;
+}
+.play:hover { border-color: var(--signal); }
+.play .icon { grid-row: 1 / 3; width: 0; height: 0; border-style: solid; border-width: 0.45rem 0 0.45rem 0.75rem; border-color: transparent transparent transparent var(--signal); }
+.play.playing .icon { width: 0.7rem; height: 0.8rem; border: 0; border-left: 0.22rem solid var(--signal); border-right: 0.22rem solid var(--signal); }
+.wavewrap { position: relative; display: block; height: 1.6rem; }
+.wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wave.base rect { fill: var(--rule); }
+.wave.top rect { fill: var(--signal); }
+.wave.top { clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0); }
+.dur { font: 400 0.7rem/1 var(--mono); color: var(--muted); }
+
+.agent { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.9rem; }
+.agent .tag { justify-self: end; padding-top: 0.25rem; margin: 0; color: var(--signal); }
+.agent p { font-size: 0.92rem; white-space: pre-line; min-width: 0; overflow-wrap: anywhere; }
+.call { margin-left: 10.4rem; display: flex; flex-wrap: wrap; gap: 0.2rem 0.7rem; align-items: baseline; font: 400 0.78rem/1.45 var(--mono); min-width: 0; }
+.call code { font: inherit; color: var(--muted); overflow-wrap: anywhere; }
+.call code b { color: var(--ink); font-weight: 500; }
+.call .out::before { content: "\2192\00a0"; color: var(--muted); }
+.call.err .out { color: var(--fail); }
+
+/* the line alone */
+.figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.figure { border-top: 2px solid var(--ink); padding-top: 0.6rem; display: grid; gap: 0.3rem; }
+.figure b { font: 750 2.2rem/1 var(--display); font-stretch: 72%; font-variant-numeric: tabular-nums; }
+.figure span { font-size: 0.85rem; color: var(--muted); }
+ul.method { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; max-width: 62ch; }
+footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1rem; }
+
+@media (max-width: 40rem) {
+  .sheet { padding-block: 2rem 3rem; gap: 2.6rem; }
+  .record { padding: 1.1rem 1rem 1rem; }
+  .caller, .agent { grid-template-columns: 1fr; gap: 0.45rem; }
+  .agent .tag { justify-self: start; padding: 0; }
+  .call { margin-left: 0; }
+  .play { max-width: 16rem; }
+  .figures { grid-template-columns: 1fr; }
+  th, td { padding: 0.6rem 0.35rem; }
+  td { font-size: 1rem; }
+}
+</style>
+
+<main class="sheet">
+  <header class="mast">
+    <p class="eyebrow">reruns &middot; voice mode</p>
+    <h1>What the agent heard</h1>
+    <p class="lede">A support agent never reads what a caller said. It reads what a speech recogniser heard. These are real trials from a benchmark that puts a simulated phone line between the customer and the agent, then grades the agent on what the customer actually asked for.</p>
+    <p class="spec" aria-label="The phone line">
+      <span>caller text</span><i>&rarr;</i><span>edge-tts, en-IN voice</span><i>&rarr;</i><span>300&ndash;3400 Hz &middot; 8 kHz &middot; &mu;-law</span><i>&rarr;</i><span>Whisper large-v3-turbo</span><i>&rarr;</i><span class="ag">agent</span>
+    </p>
+  </header>
+
+  <section class="finding" aria-labelledby="finding">
+    <h2 id="finding">A missing email gets asked for. <em>A wrong one gets trusted.</em></h2>
+    <p class="lede">Every task opens with the caller giving their email. Sorting trials by what the line did to it:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">The email in the opening line</th><th scope="col">Trials</th><th scope="col">Passed</th><th scope="col">Failed</th></tr></thead>
+        <tbody>$rows</tbody>
+      </table>
+    </div>
+    <p class="small">When the email is gone, the agent notices it has nothing to look up and asks. When Whisper hears a plausible wrong address, the lookup fails and the agent treats that as a wrong email and hands the call to a human. The dropped row includes a price-dispute task whose failures happen after the email was recovered. <code>unknown_email</code>, whose caller gives a genuinely wrong address, is left out. These are counts from $banked of $total trials banked so far, not a score: the full run is compared against a text run on the same model when both finish.</p>
+  </section>
+
+  <section aria-labelledby="calls">
+    <h2 id="calls">Five calls</h2>
+    <p class="lede">Press a waveform to hear the caller as the agent's recogniser heard it: narrowband, companded, and in an Indian English voice. Struck-through words were said and not heard; highlighted words were heard instead.</p>
+    <div class="records">$cards</div>
+  </section>
+
+  <section aria-labelledby="alone">
+    <h2 id="alone">The line on its own</h2>
+    <p class="lede">Before any agent was involved, the twenty scripted opening lines and their follow-ups went down the line once.</p>
+    <div class="figures">
+      <div class="figure"><b>0.149</b><span>word error rate across 40 lines</span></div>
+      <div class="figure"><b>7 of 21</b><span>emails survived, counting spoken &ldquo;at&rdquo; and &ldquo;dot&rdquo; as recoverable</span></div>
+      <div class="figure"><b>8 of 20</b><span>openings lost the email completely</span></div>
+    </div>
+    <p class="small">The dropped emails are Whisper's, not the audio processing's: the synthesised speech contains them, and Whisper transcribes the email alone, or followed by &ldquo;thank you&rdquo;. Both whisper-large-v3 and its turbo variant drop a short fragment at the very end of an utterance, which is how people read out an email on a call.</p>
+  </section>
+
+  <section aria-labelledby="method">
+    <h2 id="method">How it is measured</h2>
+    <ul class="method">
+      <li>Only the caller's side goes down the line. The agent's replies reach the simulated customer as text, so a simulator mishearing the agent never counts against it.</li>
+      <li>The grader checks the final database, the tool calls, and eleven policy rules, all against what the customer actually wanted. No model grades anything.</li>
+      <li>Addresses are graded as places, so &ldquo;Road&rdquo; for &ldquo;Rd&rdquo; passes and a misheard city fails. Re-scoring 100 earlier text trials under that rule changed no verdict.</li>
+      <li>The audio on this page is regenerated through the same line from the text the caller said, with each trial's own seed. The transcripts are the ones the agent received during the run.</li>
+    </ul>
+  </section>
+
+  <footer>Source, tasks and grader: <a href="$repo">github.com/veer0608/reruns</a>. Built by Veer Arora.</footer>
+</main>
+
+<script>
+(function () {
+  var audio = new Audio();
+  var current = null;
+  function reset(button) {
+    if (!button) return;
+    button.classList.remove("playing");
+    button.style.setProperty("--p", 0);
+  }
+  audio.addEventListener("timeupdate", function () {
+    if (current && audio.duration) current.style.setProperty("--p", audio.currentTime / audio.duration);
+  });
+  audio.addEventListener("ended", function () { reset(current); current = null; });
+  document.querySelectorAll(".play").forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (current === button && !audio.paused) { audio.pause(); button.classList.remove("playing"); return; }
+      if (current !== button) { reset(current); current = button; audio.src = button.getAttribute("data-src"); }
+      button.classList.add("playing");
+      audio.play().catch(function () { reset(button); });
+    });
+  });
+})();
+</script>
