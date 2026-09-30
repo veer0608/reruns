@@ -321,10 +321,13 @@ def build() -> None:
              + row("Dropped entirely", "dropped", "nothing to look up")
              + row("Misheard", "misheard", "a plausible, wrong address"),
         repo=REPO_URL,
+        page_url=PAGE_URL,
+        card_url=PAGE_URL.rsplit("/", 1)[0] + "/card.png",
     )
     OUT.write_text(page, encoding="utf-8")
     print(f"wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB) from {banked} banked trials")
     write_pages(page)
+    write_card(by[("refund_kettle", 1)])
 
 
 def write_pages(page: str) -> None:
@@ -347,6 +350,61 @@ def write_pages(page: str) -> None:
         '<body><a href="voice.html">What the agent heard</a></body></html>\n', encoding="utf-8")
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
     print(f"wrote {DOCS / 'voice.html'} for GitHub Pages")
+
+
+PAGE_URL = "https://veer0608.github.io/reruns/voice.html"
+EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+
+CARD = string.Template("""<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+body { background: #f2f4f3; color: #152120; font-family: "IBM Plex Mono", Consolas, monospace;
+       display: grid; grid-template-rows: auto 1fr auto; padding: 64px 72px 56px; box-sizing: border-box; }
+.eyebrow { font-size: 24px; letter-spacing: 0.12em; color: #0b6e6e; font-weight: 500; }
+h1 { font-family: "Archivo", "Arial Narrow", sans-serif; font-stretch: 72%; font-weight: 800; font-size: 118px;
+     line-height: 1; margin: 22px 0 18px; letter-spacing: -0.01em; }
+.claim { font-family: "Archivo", "Arial Narrow", sans-serif; font-stretch: 80%; font-weight: 650; font-size: 44px; line-height: 1.15; }
+.claim em { font-style: normal; color: #0b6e6e; }
+.row { display: grid; grid-template-columns: 1fr 360px; gap: 40px; align-items: end; }
+.lines { display: grid; gap: 10px; font-size: 26px; }
+.tag { font-size: 16px; letter-spacing: 0.1em; color: #5a6a67; margin-right: 14px; }
+del { color: #a8322b; text-decoration-thickness: 2px; }
+ins { text-decoration: none; background: #fbe6c2; color: #7d430a; padding: 0 6px; border-radius: 3px; }
+svg rect { fill: #0b6e6e; }
+.url { font-size: 22px; color: #5a6a67; margin-top: 26px; }
+</style></head><body>
+<div class="eyebrow">RERUNS &middot; VOICE MODE</div>
+<div><h1>What the agent heard</h1>
+<div class="claim">A missing email gets asked for. <em>A wrong one gets trusted.</em></div></div>
+<div><div class="row"><div class="lines">
+<div><span class="tag">SAID</span>nina.kapoor@example.com</div>
+<div><span class="tag">HEARD</span><del>nina</del> <ins>neena</ins>.kapoor at example.com</div></div>
+$wave</div><div class="url">veer0608.github.io/reruns/voice.html</div></div>
+</body></html>""")
+
+
+def write_card(verdict) -> None:
+    """docs/card.png, the 1200x630 link preview, rendered by headless Edge.
+
+    Skipped with a note where Edge is missing: the page still works, it just
+    unfurls without an image.
+    """
+    if not EDGE.is_file():
+        print("  no Edge found, so docs/card.png was not rebuilt")
+        return
+    opening = [e for e in verdict.transcript if e.get("kind") == "user"][0]
+    _, peaks, _ = phone_audio(opening["spoken"], seed_for(verdict.task_id, verdict.trial, 0))
+    bars = "".join(f'<rect x="{i * 5}" y="{50 - max(2, p * 46):.1f}" width="3" height="{max(4, p * 92):.1f}" rx="1.5"/>'
+                   for i, p in enumerate(peaks))
+    wave = f'<svg viewBox="0 0 {len(peaks) * 5} 100" width="360" height="100">{bars}</svg>'
+    source = REPO / "site" / "card.html"
+    source.write_text(CARD.substitute(wave=wave), encoding="utf-8")
+    target = DOCS / "card.png"
+    subprocess.run([str(EDGE), "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                    "--window-size=1200,630", "--virtual-time-budget=8000",
+                    f"--screenshot={target}", source.as_uri()], check=True, capture_output=True, timeout=120)
+    print(f"wrote {target} ({target.stat().st_size / 1024:.0f} KB)")
 
 
 TEMPLATE = string.Template(Path(__file__).with_name("voice_template.html").read_text(encoding="utf-8"))

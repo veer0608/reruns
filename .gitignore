@@ -13,3 +13,4 @@ runs/*.log
 runs/*.err
 !runs/.gitkeep
 site/voice.html
+site/card.html
