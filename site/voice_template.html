@@ -28,6 +28,10 @@
   --lost: #a8322b;
   --pass: #2e7a3d;
   --fail: #b3261e;
+  /* probe chart fates, validated for CVD and contrast on --paper in both themes */
+  --c-kept: #0087a0;
+  --c-dropped: #9e2f2a;
+  --c-misheard: #cf9215;
   --display: "Archivo", "Arial Narrow", "Helvetica Neue", sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -37,12 +41,14 @@
     --paper: #0e1615; --raised: #152120; --ink: #e3ebe9; --muted: #93a4a0; --rule: #26332f;
     --signal: #4fc2bf; --signal-soft: #1f3b3a; --heard-bg: #4a3212; --heard-ink: #f5c27a;
     --lost: #f08a80; --pass: #6ccb7e; --fail: #f2877e; color-scheme: dark;
+    --c-kept: #26a09a; --c-dropped: #c4433b; --c-misheard: #b8892c;
   }
 }
 :root[data-theme="dark"] {
   --paper: #0e1615; --raised: #152120; --ink: #e3ebe9; --muted: #93a4a0; --rule: #26332f;
   --signal: #4fc2bf; --signal-soft: #1f3b3a; --heard-bg: #4a3212; --heard-ink: #f5c27a;
   --lost: #f08a80; --pass: #6ccb7e; --fail: #f2877e; color-scheme: dark;
+  --c-kept: #26a09a; --c-dropped: #c4433b; --c-misheard: #b8892c;
 }
 
 * { box-sizing: border-box; }
@@ -152,6 +158,30 @@ td:last-child { color: var(--fail); }
 .figure { border-top: 2px solid var(--ink); padding-top: 0.6rem; display: grid; gap: 0.3rem; }
 .figure b { font: 750 2.2rem/1 var(--display); font-stretch: 72%; font-variant-numeric: tabular-nums; }
 .figure span { font-size: 0.85rem; color: var(--muted); }
+.subhead { font-size: 1.35rem; font-weight: 720; margin-top: 0.8rem; }
+.plegend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font: 400 0.78rem/1 var(--mono); color: var(--muted); }
+.plegend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.sw { width: 0.8rem; height: 0.8rem; border-radius: 2px; display: inline-block; }
+.probe { display: grid; gap: 0.45rem; }
+.pgroup { font: 500 0.68rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 0.7rem; }
+.prow { display: grid; grid-template-columns: 11rem minmax(0, 1fr) 6.5rem; gap: 0.8rem; align-items: center; }
+.pname { font-size: 0.9rem; }
+.pval { font: 400 0.8rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pbar { display: flex; gap: 2px; height: 0.9rem; border-radius: 4px; overflow: hidden; background: var(--paper); }
+.seg { min-width: 3px; cursor: default; }
+.seg:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.seg.kept, .sw.kept { background: var(--c-kept); }
+.seg.dropped, .sw.dropped { background: var(--c-dropped); }
+.seg.misheard, .sw.misheard { background: var(--c-misheard); }
+.pfind { margin-top: 0.4rem; font-size: 0.92rem; }
+.ptable summary { cursor: pointer; font: 400 0.82rem/1.4 var(--mono); color: var(--signal); }
+.ptable table { margin-top: 0.6rem; }
+.ptable td { font-size: 0.95rem; }
+.ptable td:last-child { color: var(--ink); }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; padding: 0.35rem 0.55rem; border-radius: 4px;
+  background: var(--ink); color: var(--paper); font: 400 0.78rem/1.3 var(--mono); max-width: 18rem;
+}
 ul.method { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; max-width: 62ch; }
 footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1rem; }
 
@@ -163,6 +193,8 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
   .call { margin-left: 0; }
   .play { max-width: 16rem; }
   .figures { grid-template-columns: 1fr; }
+  .prow { grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.8rem; }
+  .prow .pbar { grid-column: 1 / -1; grid-row: 2; }
   th, td { padding: 0.6rem 0.35rem; }
   td { font-size: 1rem; }
 }
@@ -205,6 +237,7 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
       <div class="figure"><b>8 of 20</b><span>openings lost the email completely</span></div>
     </div>
     <p class="small">The dropped emails are Whisper's, not the audio processing's: the synthesised speech contains them, and Whisper transcribes the email alone, or followed by &ldquo;thank you&rdquo;. Both whisper-large-v3 and its turbo variant drop a short fragment at the very end of an utterance, which is how people read out an email on a call.</p>
+    $probe_chart
   </section>
 
   <section aria-labelledby="method">
@@ -240,6 +273,27 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
       button.classList.add("playing");
       audio.play().catch(function () { reset(button); });
     });
+  });
+
+  var tip = document.createElement("div");
+  tip.className = "tip";
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  function show(seg, x, y) {
+    tip.textContent = seg.getAttribute("data-tip");
+    tip.hidden = false;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8)) + "px";
+    tip.style.top = Math.max(8, y - h - 10) + "px";
+  }
+  document.querySelectorAll(".seg").forEach(function (seg) {
+    seg.addEventListener("pointermove", function (e) { show(seg, e.clientX, e.clientY); });
+    seg.addEventListener("pointerleave", function () { tip.hidden = true; });
+    seg.addEventListener("focus", function () {
+      var r = seg.getBoundingClientRect();
+      show(seg, r.left + r.width / 2, r.top);
+    });
+    seg.addEventListener("blur", function () { tip.hidden = true; });
   });
 })();
 </script>

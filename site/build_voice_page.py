@@ -29,7 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from evals.compare import Side, fate_table  # noqa: E402
+from evals.compare import FATES, Side, fate_table  # noqa: E402
 from reruns.voice import seed_for, synthesize, telephone  # noqa: E402
 
 CHECKPOINT = REPO / "runs" / "voice.json"
@@ -301,6 +301,7 @@ def build() -> None:
              + row("Dropped entirely", "dropped", "nothing to look up")
              + row("Misheard", "misheard", "a plausible, wrong address"),
         repo=REPO_URL,
+        probe_chart=render_probe(load_probe()),
         page_url=PAGE_URL,
         card_url=PAGE_URL.rsplit("/", 1)[0] + "/card.png",
     )
@@ -330,6 +331,121 @@ def write_pages(page: str) -> None:
         '<body><a href="voice.html">What the agent heard</a></body></html>\n', encoding="utf-8")
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
     print(f"wrote {DOCS / 'voice.html'} for GitHub Pages")
+
+
+# -- the line probe chart ----------------------------------------------------------
+
+#: What each probe setting changes, in the order the chart shows them.
+PROBE_GROUPS = (
+    ("Reference", "baseline", "en-IN female, quiet, turbo"),
+    ("Accent", "voice en-IN male", "en-IN male"),
+    ("Accent", "voice en-US", "en-US female"),
+    ("Accent", "voice en-GB", "en-GB female"),
+    ("Noise", "noise 20 dB", "20 dB SNR"),
+    ("Noise", "noise 10 dB", "10 dB SNR"),
+    ("Noise", "noise 5 dB", "5 dB SNR"),
+    ("Recogniser", "whisper-large-v3", "large-v3"),
+    ("Trailing silence", "pad 500 ms", "500 ms, turbo"),
+    ("Trailing silence", "pad 500 ms, large-v3", "500 ms, large-v3"),
+)
+FATE_LABEL = {"kept": "kept", "dropped": "dropped", "misheard": "misheard"}
+
+
+def load_probe() -> dict | None:
+    """The probe file with the most complete settings, then the most seeds."""
+    best, best_key = None, (-1, -1)
+    for path in (REPO / "runs").glob("probe-*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        key = (sum(1 for c in data.get("configs", {}).values() if c.get("complete")), data.get("seeds", 0))
+        if key > best_key:
+            best, best_key = data, key
+    return best if best_key[0] > 0 else None
+
+
+def probe_findings(configs: dict) -> list[str]:
+    """Sentences about the probe, each computed from the settings it names.
+
+    A sentence whose settings are not all complete is left out, so the page
+    never states a comparison the data does not yet support.
+    """
+    def kept(key):
+        entry = configs.get(key, {})
+        return entry["summary"]["email_fates"]["kept"] if entry.get("complete") else None
+
+    def fate(key, which):
+        return configs[key]["summary"]["email_fates"][which]
+
+    def said(key):
+        return sum(configs[key]["summary"]["email_fates"].values())
+
+    out = []
+    base, male, us, gb = kept("baseline"), kept("voice en-IN male"), kept("voice en-US"), kept("voice en-GB")
+    if None not in (base, male, us, gb):
+        out.append(f"<b>The voice matters most.</b> Of {said('baseline')} emails, {male} survived the en-IN male "
+                   f"voice and {us} the en-US one, at similar word error rates. The en-US and en-GB voices had "
+                   f"the trailing email dropped {fate('voice en-US', 'dropped')} and "
+                   f"{fate('voice en-GB', 'dropped')} times. Dropping follows how a voice ends a sentence, not "
+                   f"its accent.")
+    v3 = kept("whisper-large-v3")
+    if None not in (base, v3):
+        out.append(f"<b>The bigger recogniser is worse at this.</b> whisper-large-v3 kept {v3} emails and dropped "
+                   f"{fate('whisper-large-v3', 'dropped')}; turbo kept {base}.")
+    noise = [kept(k) for k in ("noise 20 dB", "noise 10 dB", "noise 5 dB")]
+    if None not in (base, *noise):
+        out.append(f"<b>Noise wears emails down steadily:</b> {base}, {noise[0]}, {noise[1]}, then {noise[2]} kept "
+                   f"from a quiet line to 20, 10 and 5 dB.")
+    pad, pad_v3 = kept("pad 500 ms"), kept("pad 500 ms, large-v3")
+    if None not in (base, v3, pad, pad_v3):
+        out.append(f"<b>Trailing silence changes nothing:</b> {pad} kept with 500 ms of padding against {base} "
+                   f"without, and {pad_v3} against {v3} on large-v3. The drop is not about where the audio "
+                   f"ends; a following sentence rescues the email, silence does not.")
+    return out
+
+
+def render_probe(probe: dict | None) -> str:
+    if not probe:
+        return ""
+    configs = probe["configs"]
+    shown = [(group, key, label) for group, key, label in PROBE_GROUPS
+             if configs.get(key, {}).get("complete")]
+    missing = len(PROBE_GROUPS) - len(shown)
+    rows, table, last_group = [], [], None
+    for group, key, label in shown:
+        s = configs[key]["summary"]
+        fates = s["email_fates"]
+        said = sum(fates.values()) or 1
+        if group != last_group:
+            rows.append(f'<p class="pgroup">{esc(group)}</p>')
+            last_group = group
+        segs = "".join(
+            f'<span class="seg {fate}" style="flex-grow:{fates[fate]}" tabindex="0" '
+            f'data-tip="{esc(label)}: {fates[fate]} of {said} emails {FATE_LABEL[fate]}"></span>'
+            for fate in FATES if fates[fate])
+        rows.append(
+            f'<div class="prow"><span class="pname">{esc(label)}</span>'
+            f'<div class="pbar" role="img" aria-label="{esc(label)}: {fates["kept"]} kept, '
+            f'{fates["dropped"]} dropped, {fates["misheard"]} misheard of {said}">{segs}</div>'
+            f'<span class="pval">{fates["kept"]} of {said} kept</span></div>')
+        order = s["entities"].get("order_id", {"kept": 0, "said": 0})
+        table.append(f"<tr><th scope=\"row\">{esc(group)}: {esc(label)}</th><td>{s['mean_wer']:.3f}</td>"
+                     f"<td>{fates['kept']}</td><td>{fates['dropped']}</td><td>{fates['misheard']}</td>"
+                     f"<td>{order['kept']} of {order['said']}</td></tr>")
+    note = (f" {missing} of {len(PROBE_GROUPS)} settings are not finished and are left out rather than "
+            "averaged over whichever lines completed." if missing else "")
+    findings = "".join(f"<li>{f}</li>" for f in probe_findings(configs))
+    findings = f'<ul class="method pfind">{findings}</ul>' if findings else ""
+    return f"""
+    <h3 class="subhead" id="probe">One change at a time</h3>
+    <p class="small">Every task's first two lines went down the line again with one thing changed, over
+    {probe['seeds']} seed{'s' if probe['seeds'] != 1 else ''} each. Each bar splits the lines that carried an email
+    by what reached the recogniser's transcript.{note}</p>
+    <div class="plegend" aria-hidden="true"><span><i class="sw kept"></i>kept</span><span><i class="sw dropped"></i>dropped</span><span><i class="sw misheard"></i>misheard</span></div>
+    <div class="probe">{''.join(rows)}</div>
+    {findings}
+    <details class="ptable"><summary>Show as a table</summary><div class="tablewrap"><table>
+      <thead><tr><th scope="col">Setting</th><th scope="col">WER</th><th scope="col">Emails kept</th>
+      <th scope="col">Dropped</th><th scope="col">Misheard</th><th scope="col">Order ids</th></tr></thead>
+      <tbody>{''.join(table)}</tbody></table></div></details>"""
 
 
 PAGE_URL = "https://veer0608.github.io/reruns/voice.html"

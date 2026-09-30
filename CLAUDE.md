@@ -533,5 +533,27 @@ seed 1 reproduced the published probe within recogniser noise (WER 0.145 vs
 
 `LineConfig.pad_ms` appends silence after the noise (so it cannot dilute the
 SNR) and appears in the descriptor only when set, which keeps
-`runs/voice.json` valid. If padding stops Whisper dropping trailing emails, it
-becomes a later arm with its own checkpoint, never folded into a running one.
+`runs/voice.json` valid.
+
+**Probe results, 2026-09-30** (`runs/probe-2026-09-30.json`, 10 settings x 40
+lines x 3 seeds, complete, about 1,100 Groq calls and no cap hit). Emails kept
+of 63:
+
+    baseline (en-IN female, quiet, turbo)  24   dropped 22  misheard 17
+    en-IN male                             43           8            12
+    en-US female                            6          45            12
+    en-GB female                            9          42            12
+    noise 20 / 10 / 5 dB             17 / 13 / 10
+    whisper-large-v3                        0          60             3
+    pad 500 ms (turbo / large-v3)      24 / 0
+
+- **Voice beats everything else.** Dropping follows how a voice ends a
+  sentence, not its accent: en-US and en-GB drop far more than en-IN, at
+  similar WER. The voice run's line sits in the middle, not the hard end.
+- **large-v3 is worse than turbo here**, dropping 60 of 63 trailing emails
+  while getting more order ids right (they sit mid-sentence).
+- **Padding is not the fix.** Silence changes nothing; a following sentence
+  does (seen in the original diagnosis). So there is no padding arm. The drop
+  is the recogniser declining to transcribe a verbless final fragment.
+- WER barely moves under noise (0.146 to 0.201) while emails kept fall from 24
+  to 10: the transcript stays readable and the detail that matters goes.

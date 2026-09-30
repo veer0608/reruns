@@ -52,10 +52,14 @@ from typing import Callable
 
 from .llm import _DAILY_LIMIT, _RETRY_HINT, USER_AGENT, LLMError, QuotaExhausted, Usage
 
-#: An Indian English voice. The customers in the seed are called Nina Kapoor,
-#: Priya Raman and Omar Haddad and their addresses are in Chennai, and an
-#: accent the recogniser was not mostly trained on is the realistic hard case
-#: rather than an exotic one.
+#: An Indian English voice, because the customers in the seed are called Nina
+#: Kapoor, Priya Raman and Omar Haddad and their addresses are in Chennai.
+#: It was also picked on the guess that an accent Whisper saw less of would be
+#: the hard case. The line probe (evals.probe_line, 2026-09-30, 40 lines x 3
+#: seeds) says otherwise: en-US and en-GB voices had the trailing email DROPPED
+#: 45 and 42 times in 63, against 22 for this voice and 8 for the en-IN male
+#: voice, at similar word error rates. Dropping follows how a voice ends an
+#: utterance, not its accent. This voice sits in the middle, not at the hard end.
 VOICE_DEFAULT = "en-IN-NeerjaNeural"
 ASR_DEFAULT = "whisper-large-v3-turbo"
 ASR_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -83,8 +87,11 @@ class LineConfig:
     voice: str = VOICE_DEFAULT
     snr_db: float | None = None
     asr_model: str = ASR_DEFAULT
-    #: Silence appended after the utterance, before recognition. A candidate
-    #: fix for Whisper dropping a short fragment at the very end of the audio.
+    #: Silence appended after the utterance, before recognition. Tried as a fix
+    #: for Whisper dropping a short fragment at the end of the audio, and it is
+    #: not one: 500 ms kept 24 of 63 emails against 24 without, and 0 against 0
+    #: on large-v3 (evals.probe_line, 2026-09-30). Kept so the negative result
+    #: stays reproducible.
     pad_ms: int = 0
 
     @property

@@ -44,3 +44,42 @@ def test_the_rendered_page_marks_the_two_differently():
     wrong = page.render_diff(page.word_diff("Email is nina.kapoor@example.com.", "Email is neena.kapoor at example.com"))
     assert 'class="same"' in same and "<del>" not in same
     assert 'class="swap"' in wrong
+
+
+def summary(kept, dropped, misheard):
+    return {"mean_wer": 0.1, "verbatim": 0.5, "entities": {},
+            "email_fates": {"kept": kept, "dropped": dropped, "misheard": misheard}}
+
+
+def test_the_probe_chart_leaves_out_an_unfinished_setting():
+    probe = {"seeds": 3, "configs": {
+        "baseline": {"complete": True, "summary": summary(8, 7, 6)},
+        "noise 5 dB": {"complete": False, "rows": []},
+    }}
+    html = page.render_probe(probe)
+    assert "8 of 21 kept" in html
+    assert "5 dB SNR" not in html
+    assert "9 of 10 settings are not finished" in html
+
+
+def test_the_probe_chart_groups_rows_by_what_changed():
+    probe = {"seeds": 3, "configs": {key: {"complete": True, "summary": summary(1, 1, 1)}
+                                     for _, key, _ in page.PROBE_GROUPS}}
+    html = page.render_probe(probe)
+    order = [html.index(group) for group in ("Reference", "Accent", "Noise", "Recogniser", "Trailing silence")]
+    assert order == sorted(order)
+    assert "not finished" not in html
+
+
+def test_no_probe_means_no_chart():
+    assert page.render_probe(None) == ""
+
+
+def test_a_finding_appears_only_when_every_setting_it_names_is_complete():
+    configs = {key: {"complete": True, "summary": summary(5, 3, 2)} for _, key, _ in page.PROBE_GROUPS}
+    everything = page.probe_findings(configs)
+    assert len(everything) == 4
+    configs["pad 500 ms"] = {"complete": False, "rows": []}
+    partial = page.probe_findings(configs)
+    assert len(partial) == 3
+    assert not any("Trailing silence" in f for f in partial)

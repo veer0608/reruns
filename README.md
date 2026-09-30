@@ -324,6 +324,15 @@ dropped entirely usually got asked for again, and an email that was misheard
 never once led to a pass: the agent trusted it, the lookup failed, and it handed
 the call to a human.
 
+`python -m evals.probe_line` measures the line alone, with no agent and no
+Gemini: every scripted line, three seeds, one change at a time. Of 63 emails,
+the voice run's line kept 24. An en-IN male voice kept 43 and an en-US voice 6,
+at similar word error rates, so dropping follows how a voice ends a sentence
+rather than its accent. whisper-large-v3 kept none, worse than its turbo
+variant. Noise wore the count down to 10 at 5 dB while WER barely moved. And
+500 ms of trailing silence changed nothing, so the drop is not about where the
+audio ends: a following sentence rescues the email, silence does not.
+
 `--voice-aware` is the second arm: the same agent, told that it is on a call and
 reading a transcript, and asked to read back emails, order numbers and
 addresses before acting on them. The headline voice number is measured without
