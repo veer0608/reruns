@@ -19,6 +19,7 @@ you run the same task again.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from .dataset import Task
@@ -112,11 +113,31 @@ def check_state(task: Task, before: Snapshot, after: Snapshot) -> list[str]:
                 problems.append(f"missing {table}.{pk}")
                 continue
             for column, wanted in columns.items():
-                if row.get(column) != wanted:
+                if not _same(column, row.get(column), wanted):
                     problems.append(
                         f"{table}.{pk}.{column} is {row.get(column)!r}, expected {wanted!r}"
                     )
     return sorted(problems)
+
+
+#: Columns an agent writes as free text. Compared as the same place, not the
+#: same characters: over a phone line "Rd" is heard as "Road" and a postcode as
+#: "6-0-0-0-0-2", and an agent that writes either down has written the right
+#: address. A misheard city or a wrong digit still fails, because that is a
+#: different address.
+FREE_TEXT = frozenset({"address"})
+_ABBREVIATIONS = {"rd": "road", "st": "street", "ave": "avenue", "ln": "lane"}
+
+
+def _place(text: str) -> str:
+    tokens = re.findall(r"[a-z0-9]+", str(text).lower())
+    return "".join(_ABBREVIATIONS.get(token, token) for token in tokens)
+
+
+def _same(column: str, got, wanted) -> bool:
+    if column in FREE_TEXT and isinstance(got, str) and isinstance(wanted, str):
+        return _place(got) == _place(wanted)
+    return got == wanted
 
 
 def check_calls(task: Task, trace: Trace) -> list[str]:

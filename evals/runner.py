@@ -35,8 +35,11 @@ from pathlib import Path
 from reruns import agent
 from reruns.dataset import DEFAULT_DOMAIN, Domain, Task, validate
 from reruns.grade import Verdict, grade
-from reruns.llm import build_client
+from reruns.llm import QuotaExhausted, build_client
 from reruns.tools import Toolbox, Trace
+from reruns.voice import (
+    ASR_DEFAULT, ASR_KEY_ENV, VOICE_DEFAULT, LineConfig, build_line, channel_name, channel_stats,
+)
 
 from .checkpoint import Checkpoint, MixedHarness
 
@@ -92,6 +95,11 @@ class Summary:
                 counts[f"{violation.rule} {violation.name}"] += 1
         return counts
 
+    @property
+    def line(self) -> dict | None:
+        """What the phone line did, or None for a text run."""
+        return channel_stats([v.transcript for v in self.verdicts])
+
     def as_dict(self) -> dict:
         return {
             "solver": self.solver,
@@ -104,6 +112,7 @@ class Summary:
             "state_and_calls_rate": round(self.state_rate, 4),
             "violation_rate": round(self.violation_rate, 4),
             "violations_by_rule": dict(self.by_rule),
+            "line": self.line,
             "prompt_tokens": sum(v.prompt_tokens for v in self.verdicts),
             "completion_tokens": sum(v.completion_tokens for v in self.verdicts),
             "cost_usd": _total_cost(self.verdicts),
@@ -125,16 +134,24 @@ def run_trial(
     scripted: bool = True,
     max_turns: int = agent.MAX_TURNS,
     final_turn: bool = True,
+    line=None,
+    voice_aware: bool = False,
 ) -> Verdict:
     """One task, one trial, in a world nobody else has touched."""
     store = domain.store()
     before = store.snapshot()
     trace = Trace()
     toolbox = Toolbox(store, trace)
-    user = agent.build_user(task, client, scripted=scripted)
+    user = agent.build_user(task, client, scripted=scripted,
+                            line=line if solver == "model" else None, trial=trial)
     try:
         episode = agent.run(solver, task, domain.policy, toolbox, user, client,
-                            max_turns, final_turn=final_turn)
+                            max_turns, final_turn=final_turn, voice_aware=voice_aware)
+    except QuotaExhausted as exc:
+        # Raised from the simulated customer or the recogniser rather than the
+        # agent, which catches its own. Still the daily cliff, so it is marked
+        # as one: retrying it only burns the attempt the resume will need.
+        episode = agent.Episode(trace=trace, error=f"quota: {exc}")
     except Exception as exc:  # noqa: BLE001 - a crashed trial is a failed trial, not a dead run
         episode = agent.Episode(trace=trace, error=f"{type(exc).__name__}: {exc}")
     after = store.snapshot()
@@ -182,7 +199,7 @@ def regrade(domain: Domain, verdict: Verdict, strict_rule_7: bool = False) -> Ve
         if kind == "assistant":
             trace.say(event.get("text", ""))
         elif kind == "user":
-            trace.hear(event.get("text", ""))
+            trace.hear(event.get("text", ""), spoken=event.get("spoken"))
         elif kind == "call":
             box.invoke(event.get("name", ""), event.get("arguments") or {})
     after = store.snapshot()
@@ -208,6 +225,8 @@ def run_solver(
     max_turns: int,
     quiet: bool,
     final_turn: bool = True,
+    line=None,
+    voice_aware: bool = False,
 ) -> Summary:
     verdicts: list[Verdict] = []
     complete = True
@@ -220,7 +239,7 @@ def run_solver(
             verdict = run_trial(
                 domain, task, trial, solver,
                 client=client, scripted=scripted, max_turns=max_turns,
-                final_turn=final_turn,
+                final_turn=final_turn, line=line, voice_aware=voice_aware,
             )
             # A trial that died is not a measurement. A dropped connection
             # scored as a failed trial is the same error this project refuses
@@ -232,7 +251,7 @@ def run_solver(
                 verdict = run_trial(
                     domain, task, trial, solver,
                     client=client, scripted=scripted, max_turns=max_turns,
-                    final_turn=final_turn,
+                    final_turn=final_turn, line=line, voice_aware=voice_aware,
                 )
             verdicts.append(verdict)
             # Only a real measurement is cached. Caching a quota-killed trial
@@ -291,6 +310,13 @@ def report(summary: Summary) -> str:
         lines.append("  rules broken:")
         for rule, count in summary.by_rule.most_common():
             lines.append(f"    {count:>3}x  rule {rule}")
+    heard = summary.line
+    if heard:
+        lines.append(f"  phone line        {heard['utterances']} utterances, "
+                     f"mean WER {heard['mean_wer']:.3f}, "
+                     f"{heard['verbatim']:.0%} word-perfect")
+        for kind, tally in heard["entities"].items():
+            lines.append(f"    {kind:<14}  {tally['kept']} of {tally['said']} survived the line")
     cost = _total_cost(summary.verdicts)
     if cost is not None:
         lines.append(f"  cost              ${cost:.4f}")
@@ -325,8 +351,25 @@ def main(argv: list[str] | None = None) -> int:
                              "having seen the number before it was final")
     parser.add_argument("--check", action="store_true",
                         help="validate the task file, then assert oracle 1.0 and mute 0.0")
+    parser.add_argument("--voice", action="store_true",
+                        help="hear the customer down a phone line: TTS, 8 kHz mu-law, "
+                             f"then speech recognition. Needs {ASR_KEY_ENV} and ffmpeg.")
+    parser.add_argument("--voice-name", default=VOICE_DEFAULT, help="edge-tts voice")
+    parser.add_argument("--snr", type=float, default=None,
+                        help="add white noise at this signal-to-noise ratio, in dB")
+    parser.add_argument("--asr-model", default=ASR_DEFAULT)
+    parser.add_argument("--voice-aware", action="store_true",
+                        help="tell the agent it is on a call and hearing a transcript. "
+                             "A separate arm, never the headline voice number.")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.voice_aware and not args.voice:
+        print("--voice-aware only means something over --voice.")
+        return 2
+    config = (LineConfig(voice=args.voice_name, snr_db=args.snr, asr_model=args.asr_model)
+              if args.voice else None)
+    args.channel = channel_name(config, args.voice_aware)
 
     if args.out and args.checkpoint and Path(args.out) == Path(args.checkpoint):
         # These are different file formats. Writing the run file over the
@@ -365,8 +408,15 @@ def main(argv: list[str] | None = None) -> int:
                   "Try --solvers oracle,mute.")
             return 2
 
+    line = None
+    if config is not None:
+        line = build_line(config, cache_dir=REPO / "runs" / "voice-cache")
+        if line is None:
+            print(f"--voice needs {ASR_KEY_ENV} for speech recognition, and it is not set.")
+            return 2
+
     try:
-        checkpoint = Checkpoint.load(args.checkpoint)
+        checkpoint = Checkpoint.load(args.checkpoint, args.channel)
     except MixedHarness as exc:
         print(exc)
         return 2
@@ -377,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         "scripted_user": bool(args.scripted_user),
         "final_turn": not args.no_final_turn,
         "harness": agent.HARNESS_VERSION,
+        "channel": args.channel,
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
@@ -395,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
             max_turns=args.max_turns,
             quiet=args.quiet,
             final_turn=not args.no_final_turn,
+            line=line,
+            voice_aware=args.voice_aware,
         )
         summaries.append(summary)
         print(report(summary))
@@ -426,7 +479,7 @@ def _dry_run(domain: Domain, tasks, args) -> int:
     that were already paid for, is an expensive way to learn it.
     """
     try:
-        checkpoint = Checkpoint.load(args.checkpoint)
+        checkpoint = Checkpoint.load(args.checkpoint, args.channel)
     except MixedHarness as exc:
         print(exc)
         return 2

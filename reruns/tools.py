@@ -160,9 +160,14 @@ class Trace:
         if text and text.strip():
             self.events.append({"kind": "assistant", "text": text.strip()})
 
-    def hear(self, text: str) -> None:
+    def hear(self, text: str, spoken: str | None = None) -> None:
+        """`text` is what the agent received. Over a phone line that is the
+        recogniser's transcript, and `spoken` is what the customer actually said."""
         if text and text.strip():
-            self.events.append({"kind": "user", "text": text.strip()})
+            event = {"kind": "user", "text": text.strip()}
+            if spoken is not None:
+                event["spoken"] = spoken.strip()
+            self.events.append(event)
 
     def record(self, call: Call) -> None:
         self.calls.append(call)

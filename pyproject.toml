@@ -15,6 +15,9 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Only for --voice. Speech recognition is a urllib call like everything else,
+# and the audio work is ffmpeg plus the standard library.
+voice = ["edge-tts>=7"]
 
 [project.scripts]
 reruns = "reruns.cli:main"

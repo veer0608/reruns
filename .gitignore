@@ -8,4 +8,5 @@ dist/
 venv/
 .env
 runs/*.json
+runs/voice-cache/
 !runs/.gitkeep

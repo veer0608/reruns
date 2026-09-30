@@ -7,7 +7,7 @@ This file is the operational half.
 ## Layout
 
 - `reruns/` -- the package: `store.py`, `tools.py`, `policy.py`, `agent.py`,
-  `user.py`, `grade.py`, `dataset.py`, `llm.py`, `cli.py`
+  `user.py`, `grade.py`, `dataset.py`, `llm.py`, `voice.py`, `cli.py`
 - `evals/` -- `runner.py` (pass@1 and pass^k), `checkpoint.py` (trial-level resume)
 - `domains/retail/` -- `policy.md`, `seed.json`, `tasks.json`. A domain is a
   directory with those three files; nothing in the package hardcodes retail.
@@ -337,3 +337,100 @@ the number harder to read than no number. Finishing it would have cost another
 Its files stay in `runs/` as a record and its findings stay in this file. The
 measurement is **v2**: a fresh 75 trials on the current harness, seeded from
 nothing. Do not resume v2 from `runs/first-checkpoint.json`.
+
+## The phone line (`--voice`)
+
+`voice.py` sits between the simulated customer and the agent: edge-tts speaks
+the customer's text in an Indian English voice, ffmpeg band-limits it to the
+8 kHz phone band, it is mu-law companded (plus seeded noise with `--snr`), and
+Whisper on Groq transcribes it. The agent only ever sees the transcript. The
+trace keeps both: `text` is what the agent received, `spoken` is what the
+customer said. `channel_stats` reads WER and entity survival off those pairs,
+so every voice number is recomputable from a run file.
+
+Setup, from the repo root. The venv has pytest and edge-tts; ffmpeg is on PATH
+via winget.
+
+```powershell
+.\.venv\Scripts\python -m pip install -e .[voice]
+```
+
+`GROQ_API_KEY` is **not** in the User environment, only in
+`~/claude/moneytrail/.env`. Load it into the same invocation as the run, the
+way the Gemini key is, so nothing persistent changes:
+
+```powershell
+if (-not $env:GEMINI_API_KEY) { $env:GEMINI_API_KEY = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY','User') }; $env:GROQ_API_KEY = ((Get-Content $HOME\claude\moneytrail\.env | Where-Object { $_ -like 'GROQ_API_KEY=*' }) -split '=',2)[1].Trim().Trim('"'); $env:PYTHONIOENCODING='utf-8'; .\.venv\Scripts\python -m evals.runner --solvers model --provider gemini --model gemini-3.5-flash-lite --voice --k 1 --tasks refund_kettle --checkpoint runs/voice-smoke-ckpt.json --out runs/voice-smoke.json
+```
+
+Groq's Whisper headers on 2026-09-30 said **2000 requests per day** for
+`whisper-large-v3-turbo`, separate from any chat model's budget. A trial is
+roughly 3 to 5 customer turns, so a full `--k 5` is about 400. Gemini is the
+binding budget, exactly as for a text run.
+
+### Design rules, each for a reason
+
+- **Only the customer's side goes down the line.** The agent's replies reach
+  the simulator as text. A simulator that mishears the agent is a second noise
+  source and every failure it caused would be the harness scoring itself.
+- **The simulator and the agent prompt are unchanged by `--voice`.** Telling
+  the customer it is on the phone, or the agent that it is reading a
+  transcript, would be a second change riding along with the line, and the
+  text-versus-voice gap would stop being the line's. `--voice-aware` is the
+  separate arm that tells the agent; it is never the headline voice number, and
+  `test_text_runs_get_the_prompt_v3_was_measured_with` pins the text prompt.
+- **Grading is on what was said.** Expected state, `asks_for_card` and the
+  policy rules come from the task. A caller whose request was lost in
+  transcription was failed by the product, whichever component lost it.
+- **The channel is part of the checkpoint.** `meta.channel` is `text` or the
+  full line descriptor (voice, rate, noise, ASR model, `+aware`), and
+  `Checkpoint.load` refuses a mismatch. A missing channel reads as text, which
+  is true by construction: the line did not exist before the marker. The
+  harness version is unchanged at 3, because the text path is byte-for-byte
+  the one v3 measured.
+- **Oracle and mute never go down the line.** They are fixtures, and `--check`
+  stays free and offline.
+- **Every transcript is cached** in `runs/voice-cache/`, keyed on line
+  descriptor, seed and text. The seed is (task, trial, turn). On a quiet line
+  the audio is deterministic, so a scripted opening is transcribed the same way
+  on all five trials: the corruption of an opening line is a fixed condition of
+  that task, and pass^5 asks whether the agent reliably recovers from it.
+
+### Addresses are graded as places
+
+`grade.FREE_TEXT` columns (just `address`) compare lowercase alphanumerics with
+Rd/St/Ave/Ln expanded. Over the line "Rd" arrives as "Road" and "600002" as
+"6-0-0-0-0-2"; an agent that writes either has the right address. "Chinnai"
+or an extra zero still fails. Regrading v3's 100 trials under this changed no
+verdict, checked 2026-09-30. The first live voice trial of
+`address_change_pending` passed only because of it.
+
+### Whisper drops a trailing verbless fragment
+
+The single biggest effect on this suite. "Cancel my travel mug order please.
+omar.haddad@example.com." transcribes as the first sentence only, on both
+`whisper-large-v3` and `-turbo`, clean 16 kHz or phone band. The email alone
+transcribes; followed by "Thank you." it transcribes. 8 of the 20 scripted
+openings lose their email this way. It is realistic (that is how people read
+out an email) and is **not** to be fixed in the harness: it is what the
+measurement is for. It is a property of batch Whisper, not of every ASR; a
+streaming recogniser with endpointing may behave differently, so say which
+recogniser whenever the number is quoted.
+
+### First live evidence (smoke, not a score)
+
+2026-09-30, `gemini-3.5-flash-lite`, 4 tasks x 1 trial, scripted opening plus
+model customer. `refund_kettle` failed: Whisper heard "neena.kapoor", the
+lookup failed, and the agent escalated without asking the customer to repeat
+the email. That is correct over text, where a not-found email is genuinely
+wrong, and wrong over a phone line. It is the behaviour `--voice-aware` is
+meant to change. Four trials are an illustration, never a number.
+
+### v3's model was an alias
+
+v3 ran on `gemini-flash-lite-latest`, which pointed at `gemini-3.5-flash-lite`
+the day before v3 started and may point elsewhere now. Gemini's OpenAI-compat
+endpoint echoes the requested name, so the alias target cannot be read from a
+response. Voice runs pin `gemini-3.5-flash-lite`. A clean text-versus-voice gap
+needs a text control on the same pinned id; without one, say that the text
+side is v3 on an alias.

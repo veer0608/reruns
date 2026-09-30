@@ -26,6 +26,9 @@ class MixedHarness(RuntimeError):
     and the customer's stop condition each changed what the agent experiences,
     and each time the only thing standing between a corrupted measurement and a
     clean one was somebody remembering. This is that somebody.
+
+    The channel is checked the same way. A trial heard over a phone line and a
+    trial read as text are the same harness and two different measurements.
     """
 
 
@@ -36,7 +39,7 @@ class Checkpoint:
     meta: dict = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: str | Path | None) -> "Checkpoint":
+    def load(cls, path: str | Path | None, channel: str = "text") -> "Checkpoint":
         if path is None:
             return cls(path=None)
         target = Path(path)
@@ -55,6 +58,16 @@ class Checkpoint:
                 f"this is harness {HARNESS_VERSION}. Those are two "
                 f"measurements. Start a fresh checkpoint rather than resuming "
                 f"this one."
+            )
+        # Unlike the harness marker, a missing channel is safe to read as text:
+        # the phone line did not exist before the marker did, so every file
+        # without one was measured over text by construction.
+        heard_over = raw.get("meta", {}).get("channel", "text")
+        if heard_over != channel:
+            raise MixedHarness(
+                f"{target} was measured over {heard_over}, and this run is over "
+                f"{channel}. The agent perceives those differently, so they are "
+                f"two measurements. Start a fresh checkpoint."
             )
         verdicts = {}
         for entry in raw.get("verdicts", []):

@@ -277,6 +277,72 @@ rule 7 reading above was checked without touching a model:
 python -m evals.runner --regrade runs/v3.json --k 5 --out runs/v3-regraded.json
 ```
 
+## Over a phone line
+
+A voice agent never reads what the caller said. It reads what a speech
+recogniser heard. `--voice` puts that gap into the harness and changes nothing
+else: same twenty tasks, same simulated customer, same grader.
+
+```
+customer text -> edge-tts (en-IN voice) -> 8 kHz phone band, mu-law -> Whisper -> agent
+```
+
+Only the customer's side goes down the line. The agent's replies reach the
+simulated customer as text, because a simulator that mishears the agent is a
+second source of noise, and every failure it caused would be the harness
+scoring itself. Grading is on what the customer actually said, so a voice agent
+is held to the caller's real request, not to the transcript it was handed.
+
+Pushing the twenty scripted opening lines through the line, before any agent is
+involved, already says where voice will hurt:
+
+| said | heard |
+|---|---|
+| `nina.kapoor@example.com` | `neena.kapoor at example.com` |
+| `wei.chen@example.com` | `wei.chain at example.com` |
+| `Cancel my travel mug order please. omar.haddad@example.com.` | `Cancel my travel mug order please.` |
+| `order o_1047` | `order O-1047` |
+| `22 Spice Market Rd, Chennai 600002` | `22 Spice Market Road, Chinnei 6000002` |
+
+Across 40 lines the word error rate is 0.149. Not one of the 23 emails and
+order ids came through verbatim, and even after putting spoken "at", "dot" and
+"underscore" back, **only 7 of 21 emails and 1 of 2 order ids survived.** In 8
+of the 20 openings the email is simply gone. That is not the audio processing: the synthesised speech contains it, and
+Whisper transcribes it fine on its own or with "thank you" after it. Both
+`whisper-large-v3` and `-turbo` drop a short verbless fragment at the very end
+of an utterance, which is exactly how people read out an email on a call.
+
+The first live trial showed the cost. Whisper heard "neena.kapoor", the lookup
+failed, and the agent escalated to a human without asking the customer to
+repeat it. Over text that is the right move, because an email that is not on
+file really is wrong. Over a phone line it hands a solvable call to a person.
+
+`--voice-aware` is the second arm: the same agent, told that it is on a call and
+reading a transcript, and asked to read back emails, order numbers and
+addresses before acting on them. The headline voice number is measured without
+it, so text and voice differ in exactly one thing.
+
+Two changes were needed so the harness would not score itself:
+
+- **Addresses are graded as places, not spellings.** Over the line "Rd" is
+  heard as "Road" and a postcode as "6-0-0-0-0-2", and an agent that writes
+  either has written the right address. A misheard city or a wrong digit still
+  fails. Re-scoring v3's 100 banked trials under this comparison changed no
+  verdict.
+- **The channel is part of the checkpoint.** A trial heard over the line and a
+  trial read as text are two measurements, and resuming one as the other is
+  refused, the same way a harness change is.
+
+The voice run is not measured yet. It costs as much as v3 did, and a partial
+run gets no score.
+
+```bash
+python -m evals.runner --solvers model --voice --k 5 --checkpoint runs/voice.json --out runs/voice-report.json
+```
+
+That needs `GROQ_API_KEY` for Whisper, `ffmpeg` on the path, and
+`pip install -e .[voice]`.
+
 ## Running it
 
 Everything except the model solver runs on a fresh clone with no key and no
@@ -317,6 +383,7 @@ reruns/
   grade.py      state, calls, policy
   dataset.py    loading a domain
   llm.py        the model seam, lifted from schemablind
+  voice.py      the phone line: TTS, 8 kHz mu-law, Whisper, and what survived it
 evals/
   runner.py     pass@1 and pass^k, and the refusal to score a partial run
   checkpoint.py trial-level resume

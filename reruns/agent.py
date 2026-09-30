@@ -79,8 +79,27 @@ class Episode:
                 self.cost_usd = (self.cost_usd or 0.0) + usage.cost_usd
 
 
-def _system_prompt(policy: str, now: str) -> str:
-    return AGENT_SYSTEM.format(policy=policy.strip(), now=now)
+#: Appended only when a run asks for it. The headline voice measurement is
+#: taken WITHOUT this, so that text and voice differ in exactly one thing, the
+#: line. This is the second arm: the same agent, told what it is dealing with.
+VOICE_AWARE = """
+You are on a phone call, not a chat. You do not see the customer's words: you
+see a speech recogniser's transcript of them, and it makes mistakes, most often
+in email addresses, names, order numbers and postcodes, and sometimes by
+dropping the end of a sentence. Before you act on any of those, read it back to
+the customer and let them confirm or correct it. If something you need is
+missing, ask for it rather than guessing.
+"""
+
+
+def _system_prompt(policy: str, now: str, voice_aware: bool = False) -> str:
+    prompt = AGENT_SYSTEM.format(policy=policy.strip(), now=now)
+    return prompt + VOICE_AWARE if voice_aware else prompt
+
+
+def _spoken(user) -> str | None:
+    """What the customer really said, when a phone line sits in between."""
+    return getattr(user, "last_spoken", None)
 
 
 def run_model(
@@ -91,12 +110,13 @@ def run_model(
     client: LLMClient,
     max_turns: int = MAX_TURNS,
     final_turn: bool = True,
+    voice_aware: bool = False,
 ) -> Episode:
     episode = Episode(trace=toolbox.trace)
     opening = user.open()
-    toolbox.trace.hear(opening)
+    toolbox.trace.hear(opening, spoken=_spoken(user))
     messages = [
-        {"role": "system", "content": _system_prompt(policy, toolbox.store.now)},
+        {"role": "system", "content": _system_prompt(policy, toolbox.store.now, voice_aware)},
         {"role": "user", "content": opening},
     ]
     #: The customer has left, and the agent is finishing what it announced.
@@ -165,7 +185,7 @@ def run_model(
                            "you have already told them you would do, then stop.]",
             })
             continue
-        toolbox.trace.hear(follow_up)
+        toolbox.trace.hear(follow_up, spoken=_spoken(user))
         messages.append({"role": "user", "content": follow_up})
 
     episode.account(getattr(user, "usage", []))
@@ -204,16 +224,29 @@ def run_mute(task: Task, policy: str, toolbox: Toolbox, user) -> Episode:
 SOLVERS = ("model", "oracle", "mute")
 
 
-def build_user(task: Task, client: LLMClient | None, scripted: bool):
-    if scripted or client is None:
-        return ScriptedUser(lines=task.scripted_user)
-    from .user import ModelUser
+def build_user(task: Task, client: LLMClient | None, scripted: bool,
+               line=None, trial: int = 1):
+    """The simulated customer, heard down `line` when one is given.
 
-    return ModelUser(
-        client=client,
-        goal=task.goal,
-        opening=task.scripted_user[0] if task.scripted_user else "Hello?",
-    )
+    The simulator itself is identical either way: same prompt, same brief. A
+    customer told it was on the phone would be a second change riding along
+    with the line, and the text-versus-voice gap would stop being the line's.
+    """
+    if scripted or client is None:
+        user = ScriptedUser(lines=task.scripted_user)
+    else:
+        from .user import ModelUser
+
+        user = ModelUser(
+            client=client,
+            goal=task.goal,
+            opening=task.scripted_user[0] if task.scripted_user else "Hello?",
+        )
+    if line is None:
+        return user
+    from .voice import VoiceUser
+
+    return VoiceUser(inner=user, line=line, task_id=task.id, trial=trial)
 
 
 def run(
@@ -225,6 +258,7 @@ def run(
     client: LLMClient | None = None,
     max_turns: int = MAX_TURNS,
     final_turn: bool = True,
+    voice_aware: bool = False,
 ) -> Episode:
     if solver == "oracle":
         return run_oracle(task, policy, toolbox, user)
@@ -234,5 +268,5 @@ def run(
         if client is None:
             raise ValueError("the model solver needs an LLM client; none was built")
         return run_model(task, policy, toolbox, user, client, max_turns=max_turns,
-                         final_turn=final_turn)
+                         final_turn=final_turn, voice_aware=voice_aware)
     raise ValueError(f"unknown solver {solver!r}, expected one of {SOLVERS}")
