@@ -104,6 +104,78 @@ def word_diff(spoken: str, heard: str) -> list[tuple[str, str, str]]:
     return [(op, " ".join(a[i1:i2]), " ".join(b[j1:j2])) for op, i1, i2, j1, j2 in matcher.get_opcodes()]
 
 
+_SPOKEN = ((r"\s+at\s+", "@"), (r"\s+dot\s+", "."), (r"\s+underscore\s+", "_"))
+_SAME_WORD = {"okay": "ok", "rd": "road", "st": "street", "ave": "avenue", "ln": "lane"}
+
+
+def canonical(text: str) -> str:
+    """A phrase reduced to what it carries, so a spoken form matches its written one.
+
+    "nina.kapoor at example.com" is "nina.kapoor@example.com", "$99" is "99
+    dollars", "Rd" is "Road" (the grader treats them as one address) and
+    "6-0-0-0-0-2" is "600002". "neena" is still not "nina", and "O-1047" is
+    still not "o_1047", because an agent cannot know which one was meant.
+    """
+    t = f" {text.lower()} "
+    t = re.sub(r"\$(\d+(?:\.\d+)?)", r"\1 dollars", t)
+    for pattern, symbol in _SPOKEN:
+        t = re.sub(pattern, symbol, t)
+    t = re.sub(r"(?<=\d)-(?=\d)", "", t)
+    return "".join(_SAME_WORD.get(w.strip("."), w.strip(".")) for w in re.findall(r"[a-z0-9@._]+", t))
+
+
+_LOSSY = {"replace": "swap", "delete": "lost", "insert": "extra"}
+
+
+def classify(ops) -> list[tuple[str, str, str]]:
+    """Diff runs labelled equal, same (written differently, nothing lost) or lossy.
+
+    A change is tried alone and then together with one neighbouring word,
+    because "99 dollars" heard as "$99" diffs as an equal "99" plus a deleted
+    "dollars", and neither half is recoverable on its own.
+    """
+    out: list[tuple[str, str, str]] = []
+    runs = list(ops)
+    i = 0
+    while i < len(runs):
+        op, said, heard = runs[i]
+        if op == "equal":
+            out.append(("equal", said, heard))
+        elif canonical(said) == canonical(heard):
+            out.append(("same", said, heard))
+        elif out and out[-1][0] == "equal" and _joins(out, said, heard):
+            pass
+        elif i + 1 < len(runs) and runs[i + 1][0] == "equal" and runs[i + 1][1].split():
+            next_said, next_heard = runs[i + 1][1].split(), runs[i + 1][2].split()
+            s, h = f"{said} {next_said[0]}".strip(), f"{heard} {next_heard[0]}".strip()
+            if canonical(s) == canonical(h):
+                out.append(("same", s, h))
+                runs[i + 1] = ("equal", " ".join(next_said[1:]), " ".join(next_heard[1:]))
+            else:
+                out.append((_LOSSY[op], said, heard))
+        else:
+            out.append((_LOSSY[op], said, heard))
+        i += 1
+    return [run for run in out if run[1] or run[2]]
+
+
+def _joins(out, said: str, heard: str) -> bool:
+    """Fold the last word of the preceding equal run into this change, if that makes it recoverable."""
+    prev_said, prev_heard = out[-1][1].split(), out[-1][2].split()
+    if not prev_said or not prev_heard:
+        return False
+    s, h = f"{prev_said[-1]} {said}".strip(), f"{prev_heard[-1]} {heard}".strip()
+    if canonical(s) != canonical(h):
+        return False
+    out[-1] = ("equal", " ".join(prev_said[:-1]), " ".join(prev_heard[:-1]))
+    out.append(("same", s, h))
+    return True
+
+
+def lossy(ops) -> bool:
+    return any(kind in {"swap", "lost", "extra"} for kind, _, _ in classify(ops))
+
+
 def opening_email_fate(verdict) -> str | None:
     """What the line did to the email in the customer's first message."""
     users = [e for e in verdict.transcript if e.get("kind") == "user" and "spoken" in e]
@@ -127,12 +199,14 @@ def esc(text: str) -> str:
 
 def render_diff(ops) -> str:
     parts = []
-    for op, said, heard in ops:
-        if op == "equal":
+    for kind, said, heard in classify(ops):
+        if kind == "equal":
             parts.append(esc(heard))
-        elif op == "replace":
+        elif kind == "same":
+            parts.append(f'<span class="same" title="said: {esc(said)}">{esc(heard)}</span>')
+        elif kind == "swap":
             parts.append(f'<span class="swap"><del>{esc(said)}</del><ins>{esc(heard)}</ins></span>')
-        elif op == "delete":
+        elif kind == "lost":
             parts.append(f'<span class="lost"><del>{esc(said)}</del><em>not heard</em></span>')
         else:
             parts.append(f'<span class="swap"><ins>{esc(heard)}</ins></span>')
@@ -178,7 +252,7 @@ def render_card(verdict, title: str, note: str, index: int, extra: str = "") -> 
                                            seed_for(verdict.task_id, verdict.trial, turn))
             turn += 1
             ops = word_diff(event.get("spoken", event["text"]), event["text"])
-            changed = any(op != "equal" for op, _, _ in ops)
+            changed = lossy(ops)
             rows.append(
                 f'<li class="caller">'
                 f'<button class="play" type="button" data-src="{audio}" aria-label="Play the caller, {ms / 1000:.1f} seconds">'

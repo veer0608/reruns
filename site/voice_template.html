@@ -110,6 +110,7 @@ td:last-child { color: var(--fail); }
 .heard { color: var(--ink); }
 .swap del, .lost del { color: var(--lost); text-decoration-thickness: 1.5px; }
 .swap ins { text-decoration: none; background: var(--heard-bg); color: var(--heard-ink); padding: 0 0.2rem; border-radius: 2px; margin-left: 0.25rem; }
+.same { text-decoration: underline dotted var(--muted); text-decoration-thickness: 1.5px; text-underline-offset: 0.2em; cursor: help; }
 .lost em { font-style: normal; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--lost); margin-left: 0.35rem; }
 
 .play {
@@ -182,7 +183,7 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
 
   <section aria-labelledby="calls">
     <h2 id="calls">Five calls</h2>
-    <p class="lede">Press a waveform to hear the caller as the agent's recogniser heard it: narrowband, companded, and in an Indian English voice. Struck-through words were said and not heard; highlighted words were heard instead.</p>
+    <p class="lede">Press a waveform to hear the caller as the agent's recogniser heard it: narrowband, companded, and in an Indian English voice. Struck-through words were said and lost; highlighted words were heard in their place. Words with a dotted underline came out written differently but lost nothing, like <q>at</q> for <q>@</q>; hover them to see what was said.</p>
     <div class="records">$cards</div>
   </section>
 
