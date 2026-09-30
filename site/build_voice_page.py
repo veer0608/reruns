@@ -29,8 +29,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from evals.compare import Side  # noqa: E402
-from reruns.voice import ENTITIES, _squash, seed_for, synthesize, telephone  # noqa: E402
+from evals.compare import Side, fate_table  # noqa: E402
+from reruns.voice import seed_for, synthesize, telephone  # noqa: E402
 
 CHECKPOINT = REPO / "runs" / "voice.json"
 OUT = REPO / "site" / "voice.html"
@@ -176,20 +176,6 @@ def lossy(ops) -> bool:
     return any(kind in {"swap", "lost", "extra"} for kind, _, _ in classify(ops))
 
 
-def opening_email_fate(verdict) -> str | None:
-    """What the line did to the email in the customer's first message."""
-    users = [e for e in verdict.transcript if e.get("kind") == "user" and "spoken" in e]
-    if not users:
-        return None
-    said = ENTITIES["email"].search(users[0]["spoken"])
-    if not said:
-        return None
-    heard = _squash(users[0]["text"])
-    if said.group(0).lower().rstrip(".") in heard:
-        return "kept"
-    return "misheard" if ENTITIES["email"].search(heard) else "dropped"
-
-
 # -- rendering ---------------------------------------------------------------------
 
 
@@ -286,13 +272,7 @@ def build() -> None:
     by = {(v.task_id, v.trial): v for v in side.verdicts}
     banked = len(side.verdicts)
 
-    fates: dict[str, list[bool]] = {"kept": [], "dropped": [], "misheard": []}
-    for verdict in side.verdicts:
-        if verdict.task_id == "unknown_email":
-            continue
-        fate = opening_email_fate(verdict)
-        if fate:
-            fates[fate].append(verdict.passed)
+    fates = fate_table(side.verdicts)
 
     cards = []
     for index, (task, trial, expect_pass, title, note) in enumerate(CARDS, 1):

@@ -310,3 +310,38 @@ def test_voice_without_a_recogniser_key_says_so(monkeypatch, capsys):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     assert runner.main(["--solvers", "model", "--voice", "--k", "1"]) == 2
     assert "GROQ_API_KEY" in capsys.readouterr().out
+
+
+# -- trailing silence -------------------------------------------------------------
+
+
+def test_the_descriptor_is_unchanged_without_padding():
+    """runs/voice.json was banked under this exact string; changing it would
+    orphan a measurement that is still running."""
+    assert LineConfig().descriptor == "voice:en-IN-NeerjaNeural>g711-8000hz-quiet>whisper-large-v3-turbo"
+    assert LineConfig(pad_ms=500).descriptor == "voice:en-IN-NeerjaNeural>g711-8000hz-quiet-pad500>whisper-large-v3-turbo"
+
+
+def test_padding_reaches_the_phone_stage_only_when_set():
+    seen = []
+
+    def phone(audio, snr, seed, **kwargs):
+        seen.append(kwargs)
+        return audio, 1000.0
+
+    for pad in (0, 500):
+        Line(config=LineConfig(pad_ms=pad), transcribe=FakeEar(),
+             synth=lambda text, voice: text.encode(), phone=phone).hear("hello", seed=1)
+    assert seen == [{}, {"pad_ms": 500}]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
+def test_padding_appends_silence_without_touching_the_speech():
+    wav, ms = telephone(to_wav(tone(300)), None, seed=1)
+    padded, padded_ms = telephone(to_wav(tone(300)), None, seed=1, pad_ms=500)
+    assert padded_ms == pytest.approx(ms + 500, abs=1)
+    with wave.open(io.BytesIO(padded)) as reader:
+        frames = reader.readframes(reader.getnframes())
+    tail = array.array("h")
+    tail.frombytes(frames[-800:])
+    assert set(tail) == {0}

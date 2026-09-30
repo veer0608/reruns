@@ -501,3 +501,37 @@ embedded as data URIs, so the page is one self-contained file.
 whose note no longer matches that trial's verdict, and the finding table is
 computed from the transcripts, so rebuilding after the measurement finishes is
 safe: rerun it, check the table, commit `docs/`.
+
+## Third arm, and the line probe (added 2026-09-30)
+
+**voice-aware** is queued after the text control, as a third entry in the
+Windows job's run list: `--voice --voice-aware`, `gemini-3.5-flash-lite`,
+`--k 5`, checkpoint `runs/voice-aware.json`, report
+`runs/voice-aware-report.json`. Its channel ends in `+aware`, so the
+checkpoint guard keeps it apart from the plain voice run. `VOICE_AWARE` in
+`agent.py` is frozen from its first banked trial. The question it answers: does
+telling the agent it is on a call turn misheard-email failures (0 of 12 on the
+first 65 voice trials) into recoveries?
+
+`evals.compare` now takes one text run and one or more voice runs in any order,
+recognising each by its recorded channel, and prints columns text, voice,
+aware, plus a per-arm table of passes by what the line did to the opening
+email (kept / dropped / misheard, `unknown_email` excluded because its email is
+genuinely wrong). The listening page uses the same `fate_table`.
+
+```bash
+python -m evals.compare runs/text-control-report.json runs/voice-report.json runs/voice-aware-report.json
+```
+
+**`evals.probe_line`** measures the line alone, no agent and no Gemini: every
+task's first two scripted lines, seeds 1 to 3, over a one-factor-at-a-time grid
+around the voice run's line (accent, noise, recogniser, trailing silence).
+Groq Whisper only, cached in `runs/voice-cache/`, so a capped probe resumes
+free. A config missing any line or seed prints no numbers. The baseline on
+seed 1 reproduced the published probe within recogniser noise (WER 0.145 vs
+0.149, 8 vs 7 of 21 emails), which is why the grid uses three seeds.
+
+`LineConfig.pad_ms` appends silence after the noise (so it cannot dilute the
+SNR) and appears in the descriptor only when set, which keeps
+`runs/voice.json` valid. If padding stops Whisper dropping trailing emails, it
+becomes a later arm with its own checkpoint, never folded into a running one.

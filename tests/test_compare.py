@@ -33,19 +33,19 @@ def test_an_entity_the_recogniser_dropped_is_lost_and_one_put_back_is_not():
 
 
 def test_two_models_are_refused():
-    lines, code = compare(side([], "a", LINE), side([], "b"), ["t"], 1)
+    lines, code = compare([side([], "a", LINE), side([], "b")], ["t"], 1)
     assert code == 2 and "two models" in lines[0]
 
 
 def test_two_text_runs_are_refused():
-    lines, code = compare(side([]), side([]), ["t"], 1)
+    lines, code = compare([side([]), side([])], ["t"], 1)
     assert code == 2
 
 
 def test_an_incomplete_run_prints_no_score():
     voice = side(full({"a": [True, True]}), channel=LINE)
     text = side(full({"a": [True, True], "b": [True, True]}))
-    lines, code = compare(voice, text, ["a", "b"], 2)
+    lines, code = compare([voice, text], ["a", "b"], 2)
     out = "\n".join(lines)
     assert code == 3
     assert "NO SCORE" in out and "pass@1" not in out
@@ -59,10 +59,10 @@ def test_failures_are_split_by_what_the_line_did():
         channel=LINE,
     )
     text = side(full({"a": [True, True], "b": [True, True]}))
-    lines, code = compare(voice, text, ["a", "b"], 2)
+    lines, code = compare([voice, text], ["a", "b"], 2)
     out = "\n".join(lines)
     assert code == 0
-    assert "pass@1            1.000    0.500" in out
+    assert "pass@1                1.000    0.500" in out
     assert "exposed trial   1" in out
     assert "clean line       1" in out
     assert "lost an entity 2, and the agent still passed 1" in out
@@ -79,3 +79,32 @@ def test_main_reads_checkpoint_files(tmp_path, capsys):
     text = write("t.json", {"model": "m"}, [verdict("refund_kettle", 1, True)])
     assert main([voice, text, "--k", "5"]) == 3
     assert "NO SCORE" in capsys.readouterr().out
+
+
+AWARE = LINE + "+aware"
+MISHEARD = [{"kind": "user", "text": "Refund please. neena.kapoor at example.com",
+             "spoken": "Refund please. nina.kapoor@example.com."}]
+
+
+def test_three_arms_in_any_order_get_one_column_each():
+    text = side(full({"a": [True, True]}))
+    voice = side([verdict("a", 1, False, MISHEARD), verdict("a", 2, False, MISHEARD)], channel=LINE)
+    aware = side([verdict("a", 1, True, MISHEARD), verdict("a", 2, False, MISHEARD)], channel=AWARE)
+    lines, code = compare([aware, text, voice], ["a"], 2)
+    out = "\n".join(lines)
+    assert code == 0
+    assert "text    voice    aware" in out
+    assert "1.000    0.000    0.500" in out
+    assert "opening email misheard    0 passed of 2" in out
+    assert "opening email misheard    1 passed of 2" in out
+
+
+def test_two_runs_on_the_same_channel_are_refused():
+    lines, code = compare([side([]), side([], channel=LINE), side([], channel=LINE)], ["t"], 1)
+    assert code == 2 and "same channel" in lines[0]
+
+
+def test_the_fate_table_leaves_out_the_task_whose_email_is_really_wrong():
+    from evals.compare import fate_table
+    table = fate_table([verdict("unknown_email", 1, True, MISHEARD), verdict("a", 1, False, MISHEARD)])
+    assert table["misheard"] == [False]

@@ -83,16 +83,21 @@ class LineConfig:
     voice: str = VOICE_DEFAULT
     snr_db: float | None = None
     asr_model: str = ASR_DEFAULT
+    #: Silence appended after the utterance, before recognition. A candidate
+    #: fix for Whisper dropping a short fragment at the very end of the audio.
+    pad_ms: int = 0
 
     @property
     def descriptor(self) -> str:
         """Everything about the line that changes what the agent perceives.
 
         Two runs whose descriptors differ are two measurements, and the
-        checkpoint refuses to mix them.
+        checkpoint refuses to mix them. Padding is named only when present, so
+        every descriptor written before it existed still matches.
         """
         noise = "quiet" if self.snr_db is None else f"snr{self.snr_db:g}"
-        return f"voice:{self.voice}>g711-{PHONE_RATE}hz-{noise}>{self.asr_model}"
+        pad = f"-pad{self.pad_ms}" if self.pad_ms else ""
+        return f"voice:{self.voice}>g711-{PHONE_RATE}hz-{noise}{pad}>{self.asr_model}"
 
 
 def channel_name(config: LineConfig | None, voice_aware: bool = False) -> str:
@@ -135,12 +140,15 @@ def synthesize(text: str, voice: str = VOICE_DEFAULT) -> bytes:
     return audio
 
 
-def telephone(encoded: bytes, snr_db: float | None, seed: int) -> tuple[bytes, float]:
+def telephone(encoded: bytes, snr_db: float | None, seed: int,
+              pad_ms: int = 0) -> tuple[bytes, float]:
     """Any audio in, an 8 kHz phone-band WAV out, and its length in ms.
 
     ffmpeg does the decode, the band limit and the resample. The noise and the
     mu-law step are done here, where the seed and the SNR are exact rather than
-    approximated through a filter graph.
+    approximated through a filter graph. Padding is appended after the noise:
+    the SNR is set from the speech's power, and zeros added first would dilute
+    it and quietly lower the noise.
     """
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -157,6 +165,8 @@ def telephone(encoded: bytes, snr_db: float | None, seed: int) -> tuple[bytes, f
     samples = array.array("h")
     samples.frombytes(done.stdout[: len(done.stdout) // 2 * 2])
     line = degrade(samples, snr_db, seed)
+    if pad_ms:
+        line.extend([0] * (PHONE_RATE * pad_ms // 1000))
     return to_wav(line), 1000.0 * len(line) / PHONE_RATE
 
 
@@ -301,7 +311,8 @@ class Line:
             return Heard(spoken=text, heard=cached["heard"], audio_ms=cached["audio_ms"],
                          asr_ms=cached["asr_ms"], cached=True)
         audio = self.synth(text, self.config.voice)
-        wav, audio_ms = self.phone(audio, self.config.snr_db, seed)
+        padding = {"pad_ms": self.config.pad_ms} if self.config.pad_ms else {}
+        wav, audio_ms = self.phone(audio, self.config.snr_db, seed, **padding)
         heard, asr_ms = self.transcribe(wav)
         heard = heard.strip() or INAUDIBLE
         self._write(key, {"spoken": text, "heard": heard, "audio_ms": audio_ms,
