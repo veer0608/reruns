@@ -319,10 +319,12 @@ file really is wrong. Over a phone line it hands a solvable call to a person.
 
 **[Listen to five of these trials](https://veer0608.github.io/reruns/voice.html)**:
 the caller as the recogniser heard them, what was said against what was heard,
-and what the agent did next. On the trials banked so far, an email that was
-dropped entirely usually got asked for again, and an email that was misheard
-never once led to a pass: the agent trusted it, the lookup failed, and it handed
-the call to a human.
+and what the agent did next. Across the complete voice run of 100 trials, an
+email that was dropped entirely usually got asked for again (23 passes in 38
+trials), and an email that was misheard never once led to a pass (0 in 17): the
+agent trusted it, the lookup failed, and it handed the call to a human. The
+voice run's own score is held back until the text control on the same model
+finishes.
 
 `python -m evals.probe_line` measures the line alone, with no agent and no
 Gemini: every scripted line, three seeds, one change at a time. Of 63 emails,

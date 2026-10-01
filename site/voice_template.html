@@ -219,7 +219,7 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
         <tbody>$rows</tbody>
       </table>
     </div>
-    <p class="small">When the email is gone, the agent notices it has nothing to look up and asks. When Whisper hears a plausible wrong address, the lookup fails and the agent treats that as a wrong email and hands the call to a human. The dropped row includes a price-dispute task whose failures happen after the email was recovered. <code>unknown_email</code>, whose caller gives a genuinely wrong address, is left out. These are counts from $banked of $total trials banked so far, not a score: the full run is compared against a text run on the same model when both finish.</p>
+    <p class="small">When the email is gone, the agent notices it has nothing to look up and asks. When Whisper hears a plausible wrong address, the lookup fails and the agent treats that as a wrong email and hands the call to a human. Not every failure in the first two rows is the line's: some tasks fail there for reasons of their own, after the email was heard or recovered. <code>unknown_email</code>, whose caller gives a genuinely wrong address, is left out. $status</p>
   </section>
 
   <section aria-labelledby="calls">

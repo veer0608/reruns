@@ -294,8 +294,13 @@ def build() -> None:
                 f'<td>{len(outcomes)}</td><td>{sum(outcomes)}</td><td>{len(outcomes) - sum(outcomes)}</td></tr>')
 
     page = TEMPLATE.substitute(
-        banked=banked,
-        total=20 * K,
+        status=(
+            f"These are counts from the complete voice run of {banked} trials. Its score is held back until "
+            "a text run on the same model finishes, because a gap against a different model would count "
+            "model differences as voice damage."
+            if banked == 20 * K else
+            f"These are counts from {banked} of {20 * K} trials banked so far, not a score: the full run is "
+            "compared against a text run on the same model when both finish."),
         cards="".join(cards),
         rows=row("Came through", "kept", "the agent could read it back")
              + row("Dropped entirely", "dropped", "nothing to look up")
