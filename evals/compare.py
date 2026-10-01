@@ -6,18 +6,19 @@ One text run and one or more voice runs, in any order: each is recognised by
 the channel recorded in its metadata. Any may be a run file or a checkpoint. Two refusals come first,
 because each one has already been needed:
 
-- **Different models are not a comparison.** v3 ran on a moving alias, and the
-  pinned model failed a task over voice for a reason visible in the transcript
-  to have nothing to do with the line. A gap across two models books the model
-  difference as voice damage.
+- **Different models are not a comparison.** v3 ran on a moving alias, so a
+  gap between it and a pinned model cannot be split into a model difference and
+  a voice effect. Only a text run on the same model can do that.
 - **An incomplete run gets no score**, the same rule the runner enforces. Tasks
   that have all k trials on both sides are still shown, as counts.
 
 Failures are then split by what the line did in that trial, from the
 transcript alone. "Exposed" means some email or order id the customer said did
 not survive the recogniser. That is exposure, not blame: an exposed trial can
-still fail for a reason of its own. A failure on a clean line, though, cannot
-be the line's, which is what makes the split worth printing.
+still fail for a reason of its own. A failure on a clean line is not a lost
+detail, but it is not thereby the model's alone: a transcript that says "at"
+for "@" lost nothing and still reads differently, and whether that changes
+what the agent does is a question only the text control answers, task by task.
 """
 
 from __future__ import annotations
@@ -187,7 +188,7 @@ def compare(sides: list[Side], tasks: list[str], k: int) -> tuple[list[str], int
         lines.append("")
         lines.append(f"  {name}")
         lines.append(f"    failures on an exposed trial   {exposed_fail}")
-        lines.append(f"    failures on a clean line       {len(fails) - exposed_fail}   (cannot be the line)")
+        lines.append(f"    failures on a clean line       {len(fails) - exposed_fail}   (no email or order id lost)")
         if exposed:
             lines.append(f"    trials where the line lost an entity {len(exposed)}, "
                          f"and the agent still passed {sum(v.passed for v in exposed)}")

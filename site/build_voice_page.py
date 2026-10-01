@@ -60,11 +60,12 @@ CARDS = [
      "<q>6-0-0-0-0-2</q> and wrote the address down correctly. This trial passes only because "
      "addresses are graded as places, not spellings. Under the old exact-string check a correct "
      "agent would have failed."),
-    ("refund_cable_only", 1, False, "Not every failure is the line",
+    ("refund_cable_only", 1, False, "Not every failure is a lost detail",
      "The email came through intact, and nothing else was lost. The agent refunded the cable "
-     "before telling the customer the amount, which breaks policy rule 7. That is the model's "
-     "habit, not the phone line's, which is why the headline comparison waits for a text run on "
-     "the same model."),
+     "before telling the customer the amount, which breaks policy rule 7. So this is not the "
+     "misheard-email failure. Whether the transcript's different shape, <q>at</q> for <q>@</q>, "
+     "plays any part is an open question, and it is why the headline comparison waits for a text "
+     "run on the same model."),
 ]
 
 

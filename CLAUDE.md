@@ -557,3 +557,30 @@ of 63:
   is the recogniser declining to transcribe a verbless final fragment.
 - WER barely moves under noise (0.146 to 0.201) while emails kept fall from 24
   to 10: the transcript stays readable and the detail that matters goes.
+
+## Correction, 2026-10-01: "clean line" does not mean "not the line"
+
+Two notes above say `refund_cable_only`'s voice failures (0 of 5, rule 7,
+refund before announcing the amount) are "the pinned model's habit" and that
+"a clean-line failure cannot be the line's". Both were too strong.
+
+The first text-control trial of `refund_cable_only`, same pinned model,
+**passed**: the agent announced 9.90 and refunded in one message. The only
+difference in what it was given is `priya.raman@example.com.` against
+`priya.raman at example.com`. No detail was lost, and the behaviour differed.
+
+One trial is not a result. It may be sampling. But "clean" only ever meant
+that no email or order id was lost, and a transcript that lost nothing still
+reads differently from typed text. Whether that shifts the agent is settled per
+task by the text control, not by reading a voice transcript.
+
+- If text goes 5 of 5 on `refund_cable_only` and `mixed_refund_split`, the ten
+  "clean-line" voice failures are a voice effect of a second kind: not a lost
+  detail, but spoken-form text changing when the agent speaks. That would be a
+  finding in its own right and should be reported as one.
+- If text also fails them, the original reading stands.
+
+Wording changed in `evals/compare.py` (the label is now "no email or order id
+lost") and on the page's fifth card. The voice run's complete counts: opening
+email kept 30 of 40 passed, dropped 23 of 38, misheard 0 of 17; clean-line
+failures 10 (`refund_cable_only` 5, `mixed_refund_split` 5).
