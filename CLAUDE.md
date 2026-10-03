@@ -584,3 +584,47 @@ Wording changed in `evals/compare.py` (the label is now "no email or order id
 lost") and on the page's fifth card. The voice run's complete counts: opening
 email kept 30 of 40 passed, dropped 23 of 38, misheard 0 of 17; clean-line
 failures 10 (`refund_cable_only` 5, `mixed_refund_split` 5).
+
+### Resolved 2026-10-03: the clean-line failures on refund_cable_only are the line's
+
+All five text-control trials of `refund_cable_only` passed on
+`gemini-3.5-flash-lite`; all five voice trials failed rule 7 with no email or
+order id lost. With text (`priya.raman@example.com.`) the agent states 9.90 and
+refunds in one message; with Whisper's `priya.raman at example.com` it refunds
+first and announces after. Same model, same task, nothing lost, opposite
+behaviour, five for five each way.
+
+So there are two voice effects, not one: a **lost detail** (misheard email, 0
+passes in 17) and a **changed shape** (spoken-form text shifting when the agent
+speaks). Report them separately. The second is one task so far; it is a
+pattern of five trials against five, not a measured rate, so say "on this task"
+until more tasks show it. `mixed_refund_split`, the other clean-line failure,
+decides whether there is a second instance.
+
+## Headline, 2026-10-03: text control against voice, same model
+
+Both runs complete, `gemini-3.5-flash-lite`, 20 tasks x 5 trials, harness 3:
+
+                     text    voice
+    pass@1           0.810   0.580
+    pass^5           0.700   0.450
+    policy violated  0.040   0.050
+
+Reliably solved tasks fall from 14 to 9. Where the voice losses come from,
+read from the transcripts:
+
+- **Misheard email, then escalation** (the lost-detail effect): refund_kettle
+  5/5 to 0/5, refund_original_payment 5/5 to 0/5, late_correction 2/5 to 0/5,
+  cancel_pending_lamp 5/5 to 3/5. Opening email misheard: 0 passes in 17.
+- **Misheard address written to the order**: refusal_then_allowed 4/5 to 0/5.
+  Three trials called change_address with "22 Spice Market Road, Chinnai
+  60000002" or "Chhnei 60000002"; two escalated after a dropped email. The
+  agent acted on a corrupted entity without reading it back, which is worse
+  than escalating: the parcel goes to the wrong place.
+- **Changed shape, nothing lost**: refund_cable_only 5/5 to 0/5 (rule 7). One
+  task. mixed_refund_split also failed every voice trial on a clean line, but
+  failed every text trial too, so it is the model's, not the line's.
+
+The voice-aware arm (started 13:02 IST, 10-03) asks whether telling the agent
+it is on a call fixes the first two. The text-vs-voice numbers above are final
+and do not wait for it.

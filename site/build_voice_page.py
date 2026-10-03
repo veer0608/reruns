@@ -29,7 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from evals.compare import FATES, Side, fate_table  # noqa: E402
+from evals.compare import FATES, Side, fate_table, pass_at_1, pass_hat_k, whole  # noqa: E402
 from reruns.voice import seed_for, synthesize, telephone  # noqa: E402
 
 CHECKPOINT = REPO / "runs" / "voice.json"
@@ -60,12 +60,18 @@ CARDS = [
      "<q>6-0-0-0-0-2</q> and wrote the address down correctly. This trial passes only because "
      "addresses are graded as places, not spellings. Under the old exact-string check a correct "
      "agent would have failed."),
-    ("refund_cable_only", 1, False, "Not every failure is a lost detail",
+    ("refusal_then_allowed", 3, False, "A misheard address gets written down",
+     "The caller said <q>Chennai 600002</q>. Whisper heard <q>Chinnai 60000002</q>, and the agent "
+     "saved exactly that to the order without reading it back. Three of five voice trials did "
+     "this; the other two handed off after the email was dropped. Over typed text the same model "
+     "passed this task four times in five. A hand-off loses a call; this sends a parcel to the "
+     "wrong place."),
+    ("refund_cable_only", 1, False, "Nothing lost, and still different",
      "The email came through intact, and nothing else was lost. The agent refunded the cable "
-     "before telling the customer the amount, which breaks policy rule 7. So this is not the "
-     "misheard-email failure. Whether the transcript's different shape, <q>at</q> for <q>@</q>, "
-     "plays any part is an open question, and it is why the headline comparison waits for a text "
-     "run on the same model."),
+     "before telling the customer the amount, which breaks policy rule 7. On the same model with "
+     "typed text it announced the amount first in all five trials; given Whisper's <q>at</q> for "
+     "<q>@</q>, it refunded first in all five. The line changed the transcript's shape, not its "
+     "content, and that alone changed when the agent acted."),
 ]
 
 
@@ -268,6 +274,55 @@ def render_card(verdict, title: str, note: str, index: int, extra: str = "") -> 
 </article>"""
 
 
+TEXT_CONTROL = REPO / "runs" / "text-control-report.json"
+
+#: Per-task pass counts the headline's sentences rely on, as (task, arm, passes).
+#: The builder refuses to publish if any of them no longer holds.
+HEADLINE_FACTS = (
+    ("refund_kettle", "text", 5), ("refund_kettle", "voice", 0),
+    ("refund_original_payment", "voice", 0), ("late_correction", "voice", 0),
+    ("refusal_then_allowed", "text", 4), ("refusal_then_allowed", "voice", 0),
+    ("refund_cable_only", "text", 5), ("refund_cable_only", "voice", 0),
+    ("mixed_refund_split", "text", 0), ("mixed_refund_split", "voice", 0),
+)
+
+
+def render_headline(voice: Side) -> str:
+    """Text against voice on one model, or nothing until the text control is complete."""
+    if not TEXT_CONTROL.is_file():
+        return ""
+    text = Side.load(str(TEXT_CONTROL))
+    tasks = sorted(voice.by_task())
+    if text.meta.get("model") != voice.meta.get("model") or not (whole(text, tasks, K) and whole(voice, tasks, K)):
+        return ""
+    arms = {"text": text.by_task(), "voice": voice.by_task()}
+    for task, arm, passes in HEADLINE_FACTS:
+        got = sum(v.passed for v in arms[arm][task])
+        if got != passes:
+            raise SystemExit(f"headline says {task} {arm} passed {passes} of {K}, the run says {got}; "
+                             "update HEADLINE_FACTS and its sentences before publishing")
+    wrote_wrong = sum(
+        1 for v in arms["voice"]["refusal_then_allowed"]
+        if any(e.get("kind") == "call" and e.get("name") == "change_address" and e.get("ok") for e in v.transcript))
+    solid = {arm: round(pass_hat_k(side, tasks) * len(tasks)) for arm, side in (("text", text), ("voice", voice))}
+    return f"""
+  <section class="headline" aria-labelledby="score">
+    <h2 id="score">Over the phone, the same agent reliably solves {solid['voice']} tasks out of {len(tasks)}, not {solid['text']}.</h2>
+    <div class="tablewrap"><table class="score">
+      <thead><tr><th scope="col">Same model, {esc(str(voice.meta.get('model')))}</th><th scope="col">Typed text</th><th scope="col">Phone line</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Passed, per trial<span>pass@1, {len(tasks) * K} trials each</span></th><td>{pass_at_1(text.verdicts):.2f}</td><td>{pass_at_1(voice.verdicts):.2f}</td></tr>
+        <tr><th scope="row">Passed all {K} tries<span>pass^{K}, share of the {len(tasks)} tasks</span></th><td>{pass_hat_k(text, tasks):.2f}</td><td>{pass_hat_k(voice, tasks):.2f}</td></tr>
+      </tbody></table></div>
+    <p class="small">The only difference between the two runs is the line: the same tasks, the same simulated customer and the same grader, with the customer's words either typed or spoken and transcribed. The voice losses come from three places:</p>
+    <ul class="method">
+      <li><b>A misheard email, then a hand-off.</b> The agent trusts a plausible wrong address, the lookup fails, and it escalates: <code>refund_kettle</code>, <code>refund_original_payment</code> and <code>late_correction</code> went to 0 of {K}.</li>
+      <li><b>A misheard address written into the order.</b> In {wrote_wrong} of {K} voice trials of <code>refusal_then_allowed</code> the agent saved what Whisper heard, <q>Chinnai 60000002</q>, without reading it back. Typed, that task passed 4 of {K}.</li>
+      <li><b>Nothing lost, and still different.</b> On <code>refund_cable_only</code> the email arrived as <q>at</q> for <q>@</q>, and the agent started refunding before stating the amount: 5 of {K} typed, 0 of {K} spoken. One task shows this; <code>mixed_refund_split</code> failed every trial both ways, so it is the model's.</li>
+    </ul>
+  </section>"""
+
+
 def build() -> None:
     side = Side.load(str(CHECKPOINT))
     by = {(v.task_id, v.trial): v for v in side.verdicts}
@@ -294,8 +349,12 @@ def build() -> None:
         return (f'<tr><th scope="row">{label}<span>{gloss}</span></th>'
                 f'<td>{len(outcomes)}</td><td>{sum(outcomes)}</td><td>{len(outcomes) - sum(outcomes)}</td></tr>')
 
+    headline = render_headline(side)
     page = TEMPLATE.substitute(
+        headline=headline,
         status=(
+            f"These are counts from the complete voice run of {banked} trials, the same run scored above."
+            if banked == 20 * K and headline else
             f"These are counts from the complete voice run of {banked} trials. Its score is held back until "
             "a text run on the same model finishes, because a gap against a different model would count "
             "model differences as voice damage."

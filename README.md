@@ -317,14 +317,26 @@ failed, and the agent escalated to a human without asking the customer to
 repeat it. Over text that is the right move, because an email that is not on
 file really is wrong. Over a phone line it hands a solvable call to a person.
 
-**[Listen to five of these trials](https://veer0608.github.io/reruns/voice.html)**:
+**The result**, both runs on `gemini-3.5-flash-lite`, 20 tasks x 5 trials:
+
+|                  | typed text | phone line |
+|---|---|---|
+| pass@1           | 0.81       | 0.58       |
+| pass^5           | 0.70       | 0.45       |
+
+Over the phone the same agent reliably solves 9 tasks out of 20 instead of 14.
+The losses come from three places. A misheard email gets trusted, the lookup
+fails, and the agent hands off: an opening email that was misheard never once
+led to a pass (0 in 17), while one dropped entirely usually got asked for again
+(23 in 38). A misheard address gets written into the order: in 3 of 5 trials of
+`refusal_then_allowed` the agent saved "Chinnai 60000002" for "Chennai 600002"
+without reading it back. And on `refund_cable_only`, with nothing lost, "at" for
+"@" was enough to make the agent refund before stating the amount: 5 of 5 typed,
+0 of 5 spoken.
+
+**[Listen to six of these trials](https://veer0608.github.io/reruns/voice.html)**:
 the caller as the recogniser heard them, what was said against what was heard,
-and what the agent did next. Across the complete voice run of 100 trials, an
-email that was dropped entirely usually got asked for again (23 passes in 38
-trials), and an email that was misheard never once led to a pass (0 in 17): the
-agent trusted it, the lookup failed, and it handed the call to a human. The
-voice run's own score is held back until the text control on the same model
-finishes.
+and what the agent did next.
 
 `python -m evals.probe_line` measures the line alone, with no agent and no
 Gemini: every scripted line, three seeds, one change at a time. Of 63 emails,

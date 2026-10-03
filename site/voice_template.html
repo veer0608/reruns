@@ -85,6 +85,12 @@ h1 { font-size: clamp(2.8rem, 9vw, 4.6rem); font-weight: 800; letter-spacing: -0
 .spec i { font-style: normal; color: var(--muted); padding: 0 0.45rem; }
 .spec .ag { background: var(--signal-soft); border-color: transparent; }
 
+/* headline */
+.headline h2 { font-size: clamp(1.9rem, 5vw, 2.6rem); }
+.score td { font: 600 1.6rem/1 var(--display); font-stretch: 72%; color: var(--ink); }
+.score td:last-child { color: var(--fail); }
+.score thead th:not(:first-child), .score td { text-align: right; }
+
 /* finding */
 .finding h2 { font-size: clamp(1.9rem, 5vw, 2.5rem); }
 .finding h2 em { font-style: normal; color: var(--signal); }
@@ -209,6 +215,7 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
       <span>caller text</span><i>&rarr;</i><span>edge-tts, en-IN voice</span><i>&rarr;</i><span>300&ndash;3400 Hz &middot; 8 kHz &middot; &mu;-law</span><i>&rarr;</i><span>Whisper large-v3-turbo</span><i>&rarr;</i><span class="ag">agent</span>
     </p>
   </header>
+$headline
 
   <section class="finding" aria-labelledby="finding">
     <h2 id="finding">A missing email gets asked for. <em>A wrong one gets trusted.</em></h2>
@@ -223,7 +230,7 @@ footer { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); border-top: 1px 
   </section>
 
   <section aria-labelledby="calls">
-    <h2 id="calls">Five calls</h2>
+    <h2 id="calls">Six calls</h2>
     <p class="lede">Press a waveform to hear the caller as the agent's recogniser heard it: narrowband, companded, and in an Indian English voice. Struck-through words were said and lost; highlighted words were heard in their place. Words with a dotted underline came out written differently but lost nothing, like <q>at</q> for <q>@</q>; hover them to see what was said.</p>
     <div class="records">$cards</div>
   </section>
