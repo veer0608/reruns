@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from reruns import agent
 from reruns.dataset import DEFAULT_DOMAIN, Domain, Task, validate
 from reruns.grade import Verdict, grade
 from reruns.llm import QuotaExhausted, build_client
+from reruns.policy import RULE_NUMBERS
 from reruns.tools import Toolbox, Trace
 from reruns.voice import (
     ASR_DEFAULT, ASR_KEY_ENV, VOICE_DEFAULT, LineConfig, build_line, channel_name, channel_stats,
@@ -361,15 +363,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--voice-aware", action="store_true",
                         help="tell the agent it is on a call and hearing a transcript. "
                              "A separate arm, never the headline voice number.")
+    parser.add_argument("--policy", default=None, metavar="PATH",
+                        help="hand the agent this policy instead of the domain's policy.md. "
+                             "Named in the channel, so its checkpoint is kept apart.")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
     if args.voice_aware and not args.voice:
         print("--voice-aware only means something over --voice.")
         return 2
+    policy_text = None
+    if args.policy:
+        path = Path(args.policy)
+        if not path.is_file():
+            print(f"no policy file at {path}")
+            return 2
+        policy_text = path.read_text(encoding="utf-8")
+        numbered = {int(m) for m in re.findall(r"^\s*(\d+)\.", policy_text, re.M)}
+        if not RULE_NUMBERS <= numbered:
+            # The grader checks every rule in RULE_NUMBERS. Handing the agent a
+            # document without one of them grades it on a rule it never saw.
+            print(f"{path} is missing rules {sorted(RULE_NUMBERS - numbered)} that the grader checks.")
+            return 2
     config = (LineConfig(voice=args.voice_name, snr_db=args.snr, asr_model=args.asr_model)
               if args.voice else None)
-    args.channel = channel_name(config, args.voice_aware)
+    args.channel = channel_name(config, args.voice_aware,
+                                policy=Path(args.policy).stem if args.policy else None)
 
     if args.out and args.checkpoint and Path(args.out) == Path(args.checkpoint):
         # These are different file formats. Writing the run file over the
@@ -381,6 +400,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     domain = Domain.load(args.domain)
+    if policy_text is not None:
+        domain = replace(domain, policy=policy_text)
     problems = validate(domain)
     if problems:
         print("task file is not valid:")
@@ -428,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
         "final_turn": not args.no_final_turn,
         "harness": agent.HARNESS_VERSION,
         "channel": args.channel,
+        "policy": args.policy or "domain policy.md",
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 

@@ -628,3 +628,45 @@ read from the transcripts:
 The voice-aware arm (started 13:02 IST, 10-03) asks whether telling the agent
 it is on a call fixes the first two. The text-vs-voice numbers above are final
 and do not wait for it.
+
+### Early read on voice-aware, 2026-10-03 (40 of 100, counts not a score)
+
+On the eight tasks finished in all three runs, the voice-aware prompt fixes the
+changed-shape failure (refund_cable_only voice 0/5, aware 5/5) and does **not**
+fix the misheard email (refund_kettle and refund_original_payment stay 0/5).
+
+The transcripts say why. The aware agent still calls `find_customer` on the
+misheard address at once, and when it fails it escalates, because **policy rule
+2** says so: "If no customer matches the email, do not guess and do not search
+around it. Escalate." A general hint that the agent is on a call cannot beat a
+numbered rule telling it exactly what to do on a failed lookup. Over typed text
+the rule is right; over a phone line it turns every misheard email into a
+hand-off.
+
+So the fix for the lost-detail effect belongs in the policy, not in a channel
+hint: for voice, rule 2 would read the email back and ask the caller to spell
+it once before escalating. That is a separate arm with its own checkpoint and
+a voice-specific policy file, compared against the plain voice run. It must not
+edit `domains/retail/policy.md`, which the text control and both voice arms
+were measured against.
+
+## Fourth arm: voice-policy (queued 2026-10-03)
+
+`--policy domains/retail/policy-voice.md` hands the agent a copy of the policy
+with **only rule 2 changed**: on a failed lookup it reads the email back and
+asks the caller to confirm or spell it, looks up once more, and escalates only
+if that fails too. `test_the_voice_policy_changes_rule_2_and_nothing_else`
+pins that. It runs over plain `--voice` with no `--voice-aware` hint, so
+against the voice run the policy is the only difference.
+
+- The runner refuses a policy file missing any rule number the grader checks.
+- The policy is named in the channel (`+policy:policy-voice`) and in the run
+  metadata, so its checkpoint (`runs/voice-policy.json`) cannot be mixed with
+  any other run.
+- `domains/retail/policy.md` is untouched: the text control and both earlier
+  voice arms were measured against it.
+- It is the fourth entry in the Windows job and starts once voice-aware is
+  100 of 100, about 2026-10-04; finishes about 2026-10-06. schemablind waits
+  for the budget until then.
+- `evals.compare` names it `policy` and prints columns text, voice, aware,
+  policy.

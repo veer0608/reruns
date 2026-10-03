@@ -107,15 +107,17 @@ class LineConfig:
         return f"voice:{self.voice}>g711-{PHONE_RATE}hz-{noise}{pad}>{self.asr_model}"
 
 
-def channel_name(config: LineConfig | None, voice_aware: bool = False) -> str:
-    """The channel a run was measured on, as the checkpoint compares it.
+def channel_name(config: LineConfig | None, voice_aware: bool = False,
+                 policy: str | None = None) -> str:
+    """Everything a run's agent perceives beyond the tasks, as the checkpoint compares it.
 
-    A text run is "text" and nothing else, so every checkpoint written before
-    the line existed reads as what it was.
+    A text run on the default policy is "text" and nothing else, so every
+    checkpoint written before the line existed reads as what it was. A policy
+    other than the domain's own is named, because its text goes into the system
+    prompt verbatim and changes what the agent does.
     """
-    if config is None:
-        return "text"
-    return config.descriptor + ("+aware" if voice_aware else "")
+    base = "text" if config is None else config.descriptor + ("+aware" if voice_aware else "")
+    return base + (f"+policy:{policy}" if policy else "")
 
 
 @dataclass(frozen=True)

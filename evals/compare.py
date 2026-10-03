@@ -130,7 +130,16 @@ def fate_table(verdicts: list[Verdict]) -> dict[str, list[bool]]:
 
 
 def arm_name(side: Side) -> str:
-    return "text" if side.channel == "text" else ("aware" if side.channel.endswith("+aware") else "voice")
+    """text, voice, aware or policy: the one thing each arm changes."""
+    channel = side.channel
+    if channel == "text":
+        return "text"
+    if "+policy:" in channel:
+        return "policy"
+    return "aware" if channel.endswith("+aware") else "voice"
+
+
+ARM_ORDER = {"text": 0, "voice": 1, "aware": 2, "policy": 3}
 
 
 def refusal(sides: list[Side]) -> str | None:
@@ -153,9 +162,9 @@ def compare(sides: list[Side], tasks: list[str], k: int) -> tuple[list[str], int
     if why:
         return [why], 2
     text = next(side for side in sides if side.channel == "text")
-    # Fixed column order, whatever the argument order: text, voice, aware.
+    # Fixed column order, whatever the argument order: text, voice, aware, policy.
     voices = sorted((side for side in sides if side.channel != "text"),
-                    key=lambda side: side.channel.endswith("+aware"))
+                    key=lambda side: ARM_ORDER[arm_name(side)])
     arms = [text] + voices
     names = [arm_name(side) for side in arms]
 
